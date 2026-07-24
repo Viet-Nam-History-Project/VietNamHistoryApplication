@@ -29,10 +29,10 @@ export const getPersonPeriods = async (): Promise<PersonPeriodItem[]> => {
   try {
     return cachedLoad('person-periods', async () => {
       const staticData = await getStaticJson<PersonPeriodItem[]>('persons/periods.json');
-      if (staticData) return staticData;
+      if (staticData) return staticData.filter((item) => item.status === 'published');
       const q = query(collection(db, 'periods_person'), orderBy('sortOrder', 'asc'));
       const snap = await getDocs(q);
-      return snap.docs.map((d) => {
+      return snap.docs.filter((d) => d.data().status === 'published').map((d) => {
         const data = d.data();
         return { id: d.id, slug: d.id, ...data, startDate: toIso(data.startDate), endDate: toIso(data.endDate) } as PersonPeriodItem;
       });
@@ -48,10 +48,14 @@ export const getPersonsByPeriod = async (periodSlug: string): Promise<PersonList
   try {
     return cachedLoad(`persons:${periodSlug}`, async () => {
       const staticData = await getStaticJson<PersonListItem[]>(`persons/${periodSlug}/index.json`);
-      if (staticData) return staticData;
+      if (staticData) return staticData.filter((item) => item.status === 'published');
+      const periodSnap = await getDoc(doc(db, 'periods_person', periodSlug));
+      if (!periodSnap.exists() || periodSnap.data().status !== 'published') return [];
       const q = query(collection(db, 'periods_person', periodSlug, 'persons'), orderBy('sortOrder', 'asc'));
       const snap = await getDocs(q);
-      return snap.docs.map((d) => ({ ...d.data(), id: d.id, slug: d.id } as PersonListItem));
+      return snap.docs
+        .filter((d) => d.data().status === 'published')
+        .map((d) => ({ ...d.data(), id: d.id, slug: d.id } as PersonListItem));
     }, { ttlMs: 6 * 60 * 60 * 1000 });
   } catch (e) {
     console.error('❌ Lỗi getPersonsByPeriod:', e);
@@ -66,9 +70,12 @@ export const getPersonDetail = async (
 ): Promise<PersonDetail | null> => {
   try {
     const staticData = await getStaticJson<PersonDetail>(`persons/${periodSlug}/${personSlug}.json`);
-    if (staticData) return staticData;
-    const snap = await getDoc(doc(db, 'periods_person', periodSlug, 'persons', personSlug));
-    if (!snap.exists()) return null;
+    if (staticData) return staticData.status === 'published' ? staticData : null;
+    const [periodSnap, snap] = await Promise.all([
+      getDoc(doc(db, 'periods_person', periodSlug)),
+      getDoc(doc(db, 'periods_person', periodSlug, 'persons', personSlug)),
+    ]);
+    if (!periodSnap.exists() || periodSnap.data().status !== 'published' || !snap.exists() || snap.data().status !== 'published') return null;
     return { ...snap.data(), id: snap.id, slug: snap.id } as PersonDetail;
   } catch (e) {
     console.error('❌ Lỗi getPersonDetail:', e);
@@ -84,9 +91,17 @@ export const getPersonEvents = async (
   try {
     return cachedLoad(`person-events:${periodSlug}:${personSlug}`, async () => {
       const staticData = await getStaticJson<PersonEvent[]>(`persons/${periodSlug}/${personSlug}/events.json`);
-      if (staticData) return staticData;
+      if (staticData) return staticData.filter((item) => item.status === 'published');
+      const [periodSnap, personSnap] = await Promise.all([
+        getDoc(doc(db, 'periods_person', periodSlug)),
+        getDoc(doc(db, 'periods_person', periodSlug, 'persons', personSlug)),
+      ]);
+      if (!periodSnap.exists() || periodSnap.data().status !== 'published' || !personSnap.exists() || personSnap.data().status !== 'published') return [];
+
       const snap = await getDocs(collection(db, 'periods_person', periodSlug, 'persons', personSlug, 'events'));
-      return snap.docs.map((d) => ({ ...d.data(), id: d.id, slug: d.id } as PersonEvent));
+      return snap.docs
+        .filter((d) => d.data().status === 'published')
+        .map((d) => ({ ...d.data(), id: d.id, slug: d.id } as PersonEvent));
     }, { ttlMs: 6 * 60 * 60 * 1000 });
   } catch (e) {
     console.error('❌ Lỗi getPersonEvents:', e);
@@ -104,10 +119,16 @@ export const getPersonEventDetail = async (
     const events = await getPersonEvents(periodSlug, personSlug);
     const cached = events.find((event) => event.id === eventSlug || event.slug === eventSlug);
     if (cached) return cached;
-    const snap = await getDoc(
-      doc(db, 'periods_person', periodSlug, 'persons', personSlug, 'events', eventSlug),
-    );
-    if (!snap.exists()) return null;
+    const [periodSnap, personSnap, snap] = await Promise.all([
+      getDoc(doc(db, 'periods_person', periodSlug)),
+      getDoc(doc(db, 'periods_person', periodSlug, 'persons', personSlug)),
+      getDoc(doc(db, 'periods_person', periodSlug, 'persons', personSlug, 'events', eventSlug)),
+    ]);
+    if (
+      !periodSnap.exists() || periodSnap.data().status !== 'published'
+      || !personSnap.exists() || personSnap.data().status !== 'published'
+      || !snap.exists() || snap.data().status !== 'published'
+    ) return null;
     return { ...snap.data(), id: snap.id, slug: snap.id } as PersonEvent;
   } catch (e) {
     console.error('❌ Lỗi getPersonEventDetail:', e);

@@ -15,6 +15,7 @@ export interface PersonPeriodItem {
   endDate?: string;   // ISO string
   coverMediaRef?: string;
   sortOrder?: number;
+  status?: 'draft' | 'published' | 'archived' | string;
 }
 
 /** Item trong danh sách nhân vật của 1 thời kỳ */
@@ -30,6 +31,7 @@ export interface PersonListItem {
   coverMediaRef?: string;
   horizontalImage?: string;
   sortOrder?: number;
+  status?: 'draft' | 'published' | 'archived' | string;
 }
 
 /** Video model */
@@ -53,6 +55,7 @@ export interface PersonDetail {
   achievements?: string[];    // danh sách thành tựu
   lifetime?: string[];        // tóm tắt cuộc đời
   video?: PersonVideo;
+  status?: 'draft' | 'published' | 'archived' | string;
 }
 
 /** Sự kiện của nhân vật */
@@ -65,4 +68,5 @@ export interface PersonEvent {
   description?: string;
   coverMediaRef?: string;
   eventRef?: string; // path dạng "periods/{p}/stages/{s}/events/{e}"
+  status?: 'draft' | 'published' | 'archived' | string;
 }
