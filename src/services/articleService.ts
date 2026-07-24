@@ -10,31 +10,23 @@ import {
   getDocs,
   doc,
   getDoc,
-  where,
 } from 'firebase/firestore';
 import { db } from '@/services/firebase';
+import { cachedLoad, getStaticJson } from '@/services/contentCache';
 
 /**
  * Lấy danh sách tất cả bài viết
  * @returns Danh sách Article
  */
-export const getArticles = async () => {
+export const getArticles = async (forceRefresh = false) => {
   try {
-    const q = query(
-      collection(db, 'articles'),
-      orderBy('createdAt', 'desc'),
-    );
-    const querySnapshot = await getDocs(q);
-    const articles: any[] = [];
-
-    querySnapshot.forEach((doc) => {
-      articles.push({
-        ...doc.data(),
-        id: doc.id,
-      });
-    });
-
-    return articles;
+    return cachedLoad<any[]>('articles', async () => {
+      const staticData = await getStaticJson<any[]>('articles.json');
+      if (staticData) return staticData;
+      const q = query(collection(db, 'articles'), orderBy('createdAt', 'desc'));
+      const querySnapshot = await getDocs(q);
+      return querySnapshot.docs.map((document) => ({ ...document.data(), id: document.id }));
+    }, { ttlMs: 6 * 60 * 60 * 1000, forceRefresh });
   } catch (error) {
     console.error('❌ Lỗi lấy danh sách bài viết:', error);
     throw error;
@@ -51,6 +43,8 @@ export const getArticleById = async (articleId: string) => {
     if (!articleId) {
       throw new Error('ID bài viết không được để trống');
     }
+    const cached = (await getArticles()).find((article) => article.id === articleId);
+    if (cached) return cached;
 
     const docRef = doc(db, 'articles', articleId);
     const docSnap = await getDoc(docRef);
@@ -79,27 +73,10 @@ export const searchArticles = async (keyword: string) => {
       return [];
     }
 
-    const q = query(
-      collection(db, 'articles'),
-      orderBy('createdAt', 'desc'),
-    );
-    const querySnapshot = await getDocs(q);
-    const articles: any[] = [];
-
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      if (
-        data.title?.toLowerCase().includes(keyword.toLowerCase()) ||
-        data.description?.toLowerCase().includes(keyword.toLowerCase())
-      ) {
-        articles.push({
-          ...data,
-          id: doc.id,
-        });
-      }
-    });
-
-    return articles;
+    const normalized = keyword.toLocaleLowerCase('vi-VN');
+    return (await getArticles()).filter((article) =>
+      String(article.title ?? '').toLocaleLowerCase('vi-VN').includes(normalized)
+      || String(article.description ?? article.summary ?? '').toLocaleLowerCase('vi-VN').includes(normalized));
   } catch (error) {
     console.error('❌ Lỗi tìm kiếm bài viết:', error);
     throw error;

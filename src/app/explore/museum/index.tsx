@@ -10,8 +10,7 @@ import {
   RefreshControl, StatusBar, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
-import { db } from '@/services/firebase';
+import { getMuseums } from '@/services/museumService';
 import { BORDER_RADIUS, COLORS, FONT_SIZES, FONT_WEIGHTS, SHADOWS, SPACING } from '@/constants/theme';
 
 interface Museum {
@@ -61,8 +60,7 @@ export default function MuseumScreen() {
   const load = useCallback(async (isRefresh = false) => {
     try {
       if (isRefresh) setRefreshing(true); else setLoading(true);
-      const snap = await getDocs(query(collection(db, 'museums'), orderBy('sortOrder', 'asc')));
-      setMuseums(snap.docs.map((d) => ({ ...d.data(), id: d.id } as Museum)));
+      setMuseums(await getMuseums(isRefresh) as Museum[]);
     } catch (e) {
       console.error('❌ Load museums error:', e);
     } finally {

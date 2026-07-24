@@ -5,14 +5,22 @@
 
 import {
   collection,
-  query,
-  where,
   getDocs,
   doc,
   getDoc,
 } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import { Event } from '@/models/Event';
+import { cachedLoad, getStaticJson } from '@/services/contentCache';
+
+async function getAllEvents(): Promise<Event[]> {
+  return cachedLoad('events:all', async () => {
+    const staticData = await getStaticJson<Event[]>('events.json');
+    if (staticData) return staticData;
+    const snapshot = await getDocs(collection(db, 'events'));
+    return snapshot.docs.map((document) => ({ ...document.data(), id: document.id } as Event));
+  }, { ttlMs: 6 * 60 * 60 * 1000 });
+}
 
 /**
  * Lấy danh sách sự kiện theo giai đoạn
@@ -25,21 +33,10 @@ export const getEventsByStage = async (stageId: string): Promise<Event[]> => {
       throw new Error('ID giai đoạn không được để trống');
     }
 
-    const q = query(
-      collection(db, 'events'),
-      where('stageId', '==', stageId),
-    );
-    const querySnapshot = await getDocs(q);
-    const events: Event[] = [];
-
-    querySnapshot.forEach((doc) => {
-      events.push({
-        ...doc.data(),
-        id: doc.id,
-      } as Event);
+    return (await getAllEvents()).filter((event) => {
+      const legacy = event as Event & { stageId?: string };
+      return legacy.stageId === stageId || event.stageSlug === stageId;
     });
-
-    return events;
   } catch (error) {
     console.error('❌ Lỗi lấy danh sách sự kiện theo giai đoạn:', error);
     throw error;
@@ -57,8 +54,9 @@ export const getEventById = async (id: string): Promise<Event | null> => {
       throw new Error('ID không được để trống');
     }
 
-    const docRef = doc(db, 'events', id);
-    const docSnapshot = await getDoc(docRef);
+    const cached = (await getAllEvents()).find((event) => event.id === id);
+    if (cached) return cached;
+    const docSnapshot = await getDoc(doc(db, 'events', id));
 
     if (!docSnapshot.exists()) {
       console.warn(`⚠️ Không tìm thấy sự kiện với ID: ${id}`);
@@ -86,21 +84,10 @@ export const getEventsByPeriod = async (periodId: string): Promise<Event[]> => {
       throw new Error('ID thời kỳ không được để trống');
     }
 
-    const q = query(
-      collection(db, 'events'),
-      where('periodId', '==', periodId),
-    );
-    const querySnapshot = await getDocs(q);
-    const events: Event[] = [];
-
-    querySnapshot.forEach((doc) => {
-      events.push({
-        ...doc.data(),
-        id: doc.id,
-      } as Event);
+    return (await getAllEvents()).filter((event) => {
+      const legacy = event as Event & { periodId?: string };
+      return legacy.periodId === periodId || event.periodSlug === periodId;
     });
-
-    return events;
   } catch (error) {
     console.error('❌ Lỗi lấy danh sách sự kiện theo thời kỳ:', error);
     throw error;

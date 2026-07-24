@@ -346,7 +346,7 @@ export default function PeriodScreen() {
       if (isRefresh) setRefreshing(true);
       else setLoading(true);
       setError(null);
-      setPeriods(await getPeriods());
+      setPeriods(await getPeriods(isRefresh));
     } catch (err) {
       console.error('❌ Lỗi tải thời kỳ:', err);
       setError('Không thể tải danh sách thời kỳ.\nVui lòng thử lại.');

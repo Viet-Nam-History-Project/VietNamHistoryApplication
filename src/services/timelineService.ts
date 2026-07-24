@@ -10,9 +10,18 @@ import {
   getDocs,
   doc,
   getDoc,
-  where,
 } from 'firebase/firestore';
 import { db } from '@/services/firebase';
+import { cachedLoad, getStaticJson } from '@/services/contentCache';
+
+async function getAllTimelines(): Promise<any[]> {
+  return cachedLoad('timelines:all', async () => {
+    const staticData = await getStaticJson<any[]>('timelines.json');
+    if (staticData) return staticData;
+    const snapshot = await getDocs(query(collection(db, 'timelines'), orderBy('year', 'asc')));
+    return snapshot.docs.map((document) => ({ ...document.data(), id: document.id }));
+  }, { ttlMs: 6 * 60 * 60 * 1000 });
+}
 
 /**
  * Lấy danh sách tất cả timeline
@@ -20,21 +29,7 @@ import { db } from '@/services/firebase';
  */
 export const getTimelines = async () => {
   try {
-    const q = query(
-      collection(db, 'timelines'),
-      orderBy('year', 'asc'),
-    );
-    const querySnapshot = await getDocs(q);
-    const timelines: any[] = [];
-
-    querySnapshot.forEach((doc) => {
-      timelines.push({
-        ...doc.data(),
-        id: doc.id,
-      });
-    });
-
-    return timelines;
+    return getAllTimelines();
   } catch (error) {
     console.error('❌ Lỗi lấy danh sách timeline:', error);
     throw error;
@@ -52,8 +47,9 @@ export const getTimelineById = async (timelineId: string) => {
       throw new Error('ID timeline không được để trống');
     }
 
-    const docRef = doc(db, 'timelines', timelineId);
-    const docSnap = await getDoc(docRef);
+    const cached = (await getAllTimelines()).find((timeline) => timeline.id === timelineId);
+    if (cached) return cached;
+    const docSnap = await getDoc(doc(db, 'timelines', timelineId));
 
     if (docSnap.exists()) {
       return {
@@ -79,22 +75,7 @@ export const getTimelinesByPeriod = async (periodId: string) => {
       throw new Error('ID thời kỳ không được để trống');
     }
 
-    const q = query(
-      collection(db, 'timelines'),
-      where('periodId', '==', periodId),
-      orderBy('year', 'asc'),
-    );
-    const querySnapshot = await getDocs(q);
-    const timelines: any[] = [];
-
-    querySnapshot.forEach((doc) => {
-      timelines.push({
-        ...doc.data(),
-        id: doc.id,
-      });
-    });
-
-    return timelines;
+    return (await getAllTimelines()).filter((timeline) => timeline.periodId === periodId);
   } catch (error) {
     console.error('❌ Lỗi lấy timeline theo giai đoạn:', error);
     throw error;
@@ -112,21 +93,7 @@ export const getTimelinesByYear = async (year: number) => {
       throw new Error('Năm không được để trống');
     }
 
-    const q = query(
-      collection(db, 'timelines'),
-      where('year', '==', year),
-    );
-    const querySnapshot = await getDocs(q);
-    const timelines: any[] = [];
-
-    querySnapshot.forEach((doc) => {
-      timelines.push({
-        ...doc.data(),
-        id: doc.id,
-      });
-    });
-
-    return timelines;
+    return (await getAllTimelines()).filter((timeline) => Number(timeline.year) === year);
   } catch (error) {
     console.error('❌ Lỗi lấy timeline theo năm:', error);
     throw error;
@@ -144,23 +111,13 @@ export const searchTimelines = async (keyword: string) => {
       return [];
     }
 
-    const q = query(
-      collection(db, 'timelines'),
-      orderBy('year', 'asc'),
-    );
-    const querySnapshot = await getDocs(q);
     const timelines: any[] = [];
-
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
+    (await getAllTimelines()).forEach((data) => {
       if (
         data.title?.toLowerCase().includes(keyword.toLowerCase()) ||
         data.description?.toLowerCase().includes(keyword.toLowerCase())
       ) {
-        timelines.push({
-          ...data,
-          id: doc.id,
-        });
+        timelines.push(data);
       }
     });
 

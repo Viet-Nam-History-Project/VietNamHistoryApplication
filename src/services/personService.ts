@@ -10,6 +10,7 @@
 import { collection, query, orderBy, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import { PersonPeriodItem, PersonListItem, PersonDetail, PersonEvent } from '@/models/Person';
+import { cachedLoad, getStaticJson } from '@/services/contentCache';
 
 function toIso(value: unknown): string | undefined {
   if (!value) return undefined;
@@ -26,18 +27,16 @@ function toIso(value: unknown): string | undefined {
 /** Lấy danh sách thời kỳ nhân vật (tab Person) */
 export const getPersonPeriods = async (): Promise<PersonPeriodItem[]> => {
   try {
-    const q = query(collection(db, 'periods_person'), orderBy('sortOrder', 'asc'));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        slug: d.id,
-        ...data,
-        startDate: toIso(data.startDate),
-        endDate: toIso(data.endDate),
-      } as PersonPeriodItem;
-    });
+    return cachedLoad('person-periods', async () => {
+      const staticData = await getStaticJson<PersonPeriodItem[]>('persons/periods.json');
+      if (staticData) return staticData;
+      const q = query(collection(db, 'periods_person'), orderBy('sortOrder', 'asc'));
+      const snap = await getDocs(q);
+      return snap.docs.map((d) => {
+        const data = d.data();
+        return { id: d.id, slug: d.id, ...data, startDate: toIso(data.startDate), endDate: toIso(data.endDate) } as PersonPeriodItem;
+      });
+    }, { ttlMs: 6 * 60 * 60 * 1000 });
   } catch (e) {
     console.error('❌ Lỗi getPersonPeriods:', e);
     throw e;
@@ -47,12 +46,13 @@ export const getPersonPeriods = async (): Promise<PersonPeriodItem[]> => {
 /** Lấy danh sách nhân vật trong một thời kỳ */
 export const getPersonsByPeriod = async (periodSlug: string): Promise<PersonListItem[]> => {
   try {
-    const q = query(
-      collection(db, 'periods_person', periodSlug, 'persons'),
-      orderBy('sortOrder', 'asc'),
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ ...d.data(), id: d.id, slug: d.id } as PersonListItem));
+    return cachedLoad(`persons:${periodSlug}`, async () => {
+      const staticData = await getStaticJson<PersonListItem[]>(`persons/${periodSlug}/index.json`);
+      if (staticData) return staticData;
+      const q = query(collection(db, 'periods_person', periodSlug, 'persons'), orderBy('sortOrder', 'asc'));
+      const snap = await getDocs(q);
+      return snap.docs.map((d) => ({ ...d.data(), id: d.id, slug: d.id } as PersonListItem));
+    }, { ttlMs: 6 * 60 * 60 * 1000 });
   } catch (e) {
     console.error('❌ Lỗi getPersonsByPeriod:', e);
     throw e;
@@ -65,6 +65,8 @@ export const getPersonDetail = async (
   personSlug: string,
 ): Promise<PersonDetail | null> => {
   try {
+    const staticData = await getStaticJson<PersonDetail>(`persons/${periodSlug}/${personSlug}.json`);
+    if (staticData) return staticData;
     const snap = await getDoc(doc(db, 'periods_person', periodSlug, 'persons', personSlug));
     if (!snap.exists()) return null;
     return { ...snap.data(), id: snap.id, slug: snap.id } as PersonDetail;
@@ -80,10 +82,12 @@ export const getPersonEvents = async (
   personSlug: string,
 ): Promise<PersonEvent[]> => {
   try {
-    const snap = await getDocs(
-      collection(db, 'periods_person', periodSlug, 'persons', personSlug, 'events'),
-    );
-    return snap.docs.map((d) => ({ ...d.data(), id: d.id, slug: d.id } as PersonEvent));
+    return cachedLoad(`person-events:${periodSlug}:${personSlug}`, async () => {
+      const staticData = await getStaticJson<PersonEvent[]>(`persons/${periodSlug}/${personSlug}/events.json`);
+      if (staticData) return staticData;
+      const snap = await getDocs(collection(db, 'periods_person', periodSlug, 'persons', personSlug, 'events'));
+      return snap.docs.map((d) => ({ ...d.data(), id: d.id, slug: d.id } as PersonEvent));
+    }, { ttlMs: 6 * 60 * 60 * 1000 });
   } catch (e) {
     console.error('❌ Lỗi getPersonEvents:', e);
     throw e;
@@ -97,6 +101,9 @@ export const getPersonEventDetail = async (
   eventSlug: string,
 ): Promise<PersonEvent | null> => {
   try {
+    const events = await getPersonEvents(periodSlug, personSlug);
+    const cached = events.find((event) => event.id === eventSlug || event.slug === eventSlug);
+    if (cached) return cached;
     const snap = await getDoc(
       doc(db, 'periods_person', periodSlug, 'persons', personSlug, 'events', eventSlug),
     );

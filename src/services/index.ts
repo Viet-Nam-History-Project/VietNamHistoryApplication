@@ -76,6 +76,14 @@ export { BADGE_DEFINITIONS, getBadgeDefinition, checkNewBadges } from './badgeSe
 export { calculateStreak, getTodayVietnam } from './streakService';
 export { logGameSession, getUserGamificationProfile, getUserPlayHistory } from './gamificationService';
 
+// AI history assistant
+export { askHistoryAi } from './chatAiService';
+export type {
+  ChatAiResponse,
+  ChatCitation,
+  ChatHistoryMessage,
+} from './chatAiService';
+
 // Forum services
 export {
   getForumPosts,

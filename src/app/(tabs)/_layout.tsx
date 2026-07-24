@@ -1,11 +1,18 @@
-import { Tabs } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Platform } from 'react-native';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { FONT_WEIGHTS, Fonts } from '@/constants/theme';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function TabLayout() {
   const colors = useThemeColors();
+  const { user, isLoading } = useAuth();
+
+  // Không mount các tab (và không query Firestore) trước khi Firebase Auth
+  // khôi phục xong. Session local cũ không còn đủ để đi vào ứng dụng.
+  if (isLoading) return null;
+  if (!user) return <Redirect href="/auth" />;
 
   return (
     <Tabs

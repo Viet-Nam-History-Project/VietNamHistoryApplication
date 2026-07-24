@@ -1,66 +1,115 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function owner(userId) { return signedIn() && request.auth.uid == userId; }
 
-    // ── Users ──────────────────────────────────────────────
-    // Mọi user đã auth đều có thể đọc profile user khác
-    // Chỉ owner mới có thể ghi (cập nhật gamification, profile)
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth.uid == userId;
+      allow read: if signedIn();
+      allow create: if owner(userId)
+        && request.resource.data.uid == userId
+        && request.resource.data.keys().hasOnly([
+          'uid', 'email', 'username', 'displayName', 'name', 'bio', 'phone',
+          'avatar', 'photo', 'createdAt', 'updatedAt', 'totalXP', 'currentRank',
+          'currentStreak', 'longestStreak', 'totalSessions', 'highestScore',
+          'lastPlayedDate', 'finishedQuizzes'
+        ]);
+      allow update: if owner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'name', 'username', 'bio', 'phone', 'avatar', 'photo',
+          'updatedAt', 'totalXP', 'currentRank', 'currentStreak', 'longestStreak',
+          'totalSessions', 'highestScore', 'lastPlayedDate', 'finishedQuizzes'
+        ]);
+      allow delete: if false;
 
-      // Badges subcollection — chỉ owner
       match /badges/{badgeId} {
-        allow read: if request.auth != null;
-        allow write: if request.auth.uid == userId;
+        allow read: if signedIn();
+        allow create: if owner(userId);
+        allow update, delete: if false;
       }
     }
 
-    // ── History (sessions) ────────────────────────────────
-    // Chỉ owner mới có thể đọc/ghi lịch sử chơi
     match /history/{userId}/sessions/{sessionId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow create: if request.auth.uid == userId;
-      // Không cho phép update/delete session đã tạo
+      allow read: if owner(userId);
+      allow create: if owner(userId)
+        && request.resource.data.keys().hasOnly([
+          'type', 'gameId', 'gameTitle', 'quizId', 'score', 'totalQuestions',
+          'correctAnswers', 'wrongAnswers', 'xpGained', 'timeTaken', 'answers',
+          'timelineItems', 'playedAt', 'completedAt'
+        ]);
+      allow update, delete: if false;
     }
 
-    // ── Periods (read-only cho auth users) ────────────────
-    match /periods/{document=**} {
-      allow read: if request.auth != null;
-    }
+    match /periods/{document=**} { allow read: if signedIn(); }
+    match /periods_person/{document=**} { allow read: if signedIn(); }
+    match /games/{document=**} { allow read: if signedIn(); }
+    match /explore/{document=**} { allow read: if signedIn(); }
+    match /articles/{document=**} { allow read: if signedIn(); }
+    match /events/{document=**} { allow read: if signedIn(); }
+    match /museums/{document=**} { allow read: if signedIn(); }
+    match /timelines/{document=**} { allow read: if signedIn(); }
 
-    // ── Periods Person (read-only) ────────────────────────
-    match /periods_person/{document=**} {
-      allow read: if request.auth != null;
-    }
-
-    // ── Games (read-only) ─────────────────────────────────
-    match /games/{document=**} {
-      allow read: if request.auth != null;
-    }
-
-    // ── Explore (read-only) ───────────────────────────────
-    match /explore/{document=**} {
-      allow read: if request.auth != null;
-    }
-
-    // ── Forum ─────────────────────────────────────────────
     match /forum/{postId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow read: if signedIn() && resource.data.isHidden != true;
+      allow create: if signedIn()
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'title', 'content', 'authorId', 'authorName', 'authorPhoto', 'authorRank',
+          'likeCount', 'likes', 'replyCount', 'postId', 'createdAt'
+        ]);
+      allow update: if signedIn()
+        && resource.data.isHidden != true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'likes', 'likeCount', 'replyCount'
+        ]);
+      allow delete: if false;
 
       match /replies/{replyId} {
-        allow read, write: if request.auth != null;
+        allow read: if signedIn();
+        allow create: if signedIn()
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.keys().hasOnly([
+            'content', 'authorId', 'authorName', 'authorPhoto', 'authorRank', 'createdAt'
+          ]);
+        allow update, delete: if false;
       }
 
-      // User chỉ được tạo báo cáo của chính mình. Mọi thao tác moderation
-      // được thực hiện bằng Firebase Admin SDK trên web quản trị.
       match /reports/{reportId} {
-        allow create: if request.auth != null
+        // Tương thích với các bản app cũ; read-model script sẽ chuyển sang forum_reports.
+        allow create: if signedIn()
           && request.resource.data.reporterId == request.auth.uid
-          && request.resource.data.status == 'pending';
+          && request.resource.data.status == 'pending'
+          && request.resource.data.keys().hasOnly([
+            'targetType', 'postId', 'postPath', 'postTitle', 'postContentSnapshot',
+            'reportedUserId', 'reportedUserName', 'reporterId', 'reporterName',
+            'reporterEmail', 'reasonCode', 'reasonLabel', 'description', 'status',
+            'createdAt', 'updatedAt'
+          ]);
         allow read, update, delete: if false;
       }
     }
+
+    // Hàng đợi moderation top-level giúp Admin phân trang mà không quét N+1.
+    match /forum_reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.postPath.matches('forum/[^/]+')
+        && request.resource.data.keys().hasOnly([
+          'targetType', 'postId', 'postPath', 'postTitle', 'postContentSnapshot',
+          'reportedUserId', 'reportedUserName', 'reporterId', 'reporterName',
+          'reporterEmail', 'reasonCode', 'reasonLabel', 'description', 'status',
+          'createdAt', 'updatedAt'
+        ]);
+      allow read, update, delete: if false;
+    }
+
+    // Chỉ Firebase Admin SDK được truy cập các read-model nội bộ.
+    match /admin_stats/{document=**} { allow read, write: if false; }
+    match /analytics_daily/{document=**} { allow read, write: if false; }
+    match /admin_users/{document=**} { allow read, write: if false; }
+    match /admin_audit_logs/{document=**} { allow read, write: if false; }
+    match /admin_trash/{document=**} { allow read, write: if false; }
+    match /{document=**} { allow read, write: if false; }
   }
 }

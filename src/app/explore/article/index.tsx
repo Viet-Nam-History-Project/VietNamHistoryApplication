@@ -10,8 +10,7 @@ import {
   StatusBar, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
-import { db } from '@/services/firebase';
+import { getArticles } from '@/services/articleService';
 import { BORDER_RADIUS, COLORS, FONT_SIZES, FONT_WEIGHTS, SHADOWS, SPACING } from '@/constants/theme';
 
 interface Article {
@@ -52,8 +51,7 @@ export default function ArticleListScreen() {
   const load = useCallback(async (isRefresh = false) => {
     try {
       if (isRefresh) setRefreshing(true); else setLoading(true);
-      const snap = await getDocs(query(collection(db, 'articles'), orderBy('sortOrder', 'asc')));
-      setArticles(snap.docs.map((d) => ({ ...d.data(), id: d.id } as Article)));
+      setArticles(await getArticles(isRefresh) as Article[]);
     } catch (e) {
       console.error('❌ Load articles error:', e);
     } finally {

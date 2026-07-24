@@ -16,6 +16,7 @@ import {
 import { db } from '@/services/firebase';
 import { Stage } from '@/models/Stage';
 import { Event } from '@/models/Event';
+import { cachedLoad, getStaticJson } from '@/services/contentCache';
 
 /**
  * Lấy danh sách giai đoạn của một thời kỳ (subcollection)
@@ -24,23 +25,13 @@ import { Event } from '@/models/Event';
 export const getStagesByPeriod = async (periodSlug: string): Promise<Stage[]> => {
   try {
     if (!periodSlug) throw new Error('periodSlug không được để trống');
-
-    const q = query(
-      collection(db, 'periods', periodSlug, 'stages'),
-      orderBy('sortOrder', 'asc'),
-    );
-    const snapshot = await getDocs(q);
-    const stages: Stage[] = [];
-
-    snapshot.forEach((d) => {
-      stages.push({
-        ...d.data(),
-        id: d.id,
-        periodSlug,
-      } as Stage);
-    });
-
-    return stages;
+    return cachedLoad(`stages:${periodSlug}`, async () => {
+      const staticData = await getStaticJson<Stage[]>(`periods/${periodSlug}/stages.json`);
+      if (staticData) return staticData;
+      const q = query(collection(db, 'periods', periodSlug, 'stages'), orderBy('sortOrder', 'asc'));
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map((d) => ({ ...d.data(), id: d.id, periodSlug } as Stage));
+    }, { ttlMs: 6 * 60 * 60 * 1000 });
   } catch (error) {
     console.error('❌ Lỗi lấy danh sách giai đoạn:', error);
     throw error;
@@ -57,6 +48,9 @@ export const getStageById = async (
   stageSlug: string,
 ): Promise<Stage | null> => {
   try {
+    const stages = await getStagesByPeriod(periodSlug);
+    const cached = stages.find((stage) => stage.id === stageSlug);
+    if (cached) return cached;
     const docRef = doc(db, 'periods', periodSlug, 'stages', stageSlug);
     const snap = await getDoc(docRef);
 
@@ -82,23 +76,13 @@ export const getEventsByStage = async (
   stageSlug: string,
 ): Promise<Event[]> => {
   try {
-    const q = query(
-      collection(db, 'periods', periodSlug, 'stages', stageSlug, 'events'),
-      orderBy('sortOrder', 'asc'),
-    );
-    const snapshot = await getDocs(q);
-    const events: Event[] = [];
-
-    snapshot.forEach((d) => {
-      events.push({
-        ...d.data(),
-        id: d.id,
-        periodSlug,
-        stageSlug,
-      } as Event);
-    });
-
-    return events;
+    return cachedLoad(`events:${periodSlug}:${stageSlug}`, async () => {
+      const staticData = await getStaticJson<Event[]>(`periods/${periodSlug}/stages/${stageSlug}/events.json`);
+      if (staticData) return staticData;
+      const q = query(collection(db, 'periods', periodSlug, 'stages', stageSlug, 'events'), orderBy('sortOrder', 'asc'));
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map((d) => ({ ...d.data(), id: d.id, periodSlug, stageSlug } as Event));
+    }, { ttlMs: 6 * 60 * 60 * 1000 });
   } catch (error) {
     console.error('❌ Lỗi lấy sự kiện:', error);
     throw error;

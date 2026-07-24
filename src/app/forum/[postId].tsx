@@ -330,7 +330,7 @@ export default function ForumDetailScreen() {
         {/* Replies section header */}
         <View style={styles.repliesHeader}>
           <Text style={styles.repliesTitle}>
-            Bình luận <Text style={{ color: SuVietColors.do }}>({replies.length})</Text>
+            Bình luận <Text style={{ color: SuVietColors.do }}>({post?.replyCount ?? replies.length})</Text>
           </Text>
         </View>
       </View>

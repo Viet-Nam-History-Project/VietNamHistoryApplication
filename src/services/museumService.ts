@@ -10,31 +10,23 @@ import {
   getDocs,
   doc,
   getDoc,
-  where,
 } from 'firebase/firestore';
 import { db } from '@/services/firebase';
+import { cachedLoad, getStaticJson } from '@/services/contentCache';
 
 /**
  * Lấy danh sách tất cả bảo tàng
  * @returns Danh sách Museum
  */
-export const getMuseums = async () => {
+export const getMuseums = async (forceRefresh = false) => {
   try {
-    const q = query(
-      collection(db, 'museums'),
-      orderBy('name', 'asc'),
-    );
-    const querySnapshot = await getDocs(q);
-    const museums: any[] = [];
-
-    querySnapshot.forEach((doc) => {
-      museums.push({
-        ...doc.data(),
-        id: doc.id,
-      });
-    });
-
-    return museums;
+    return cachedLoad<any[]>('museums', async () => {
+      const staticData = await getStaticJson<any[]>('museums.json');
+      if (staticData) return staticData;
+      const q = query(collection(db, 'museums'), orderBy('name', 'asc'));
+      const querySnapshot = await getDocs(q);
+      return querySnapshot.docs.map((document) => ({ ...document.data(), id: document.id }));
+    }, { ttlMs: 6 * 60 * 60 * 1000, forceRefresh });
   } catch (error) {
     console.error('❌ Lỗi lấy danh sách bảo tàng:', error);
     throw error;
@@ -51,6 +43,8 @@ export const getMuseumById = async (museumId: string) => {
     if (!museumId) {
       throw new Error('ID bảo tàng không được để trống');
     }
+    const cached = (await getMuseums()).find((museum) => museum.id === museumId);
+    if (cached) return cached;
 
     const docRef = doc(db, 'museums', museumId);
     const docSnap = await getDoc(docRef);
@@ -79,22 +73,7 @@ export const getMuseumsByRegion = async (region: string) => {
       throw new Error('Khu vực không được để trống');
     }
 
-    const q = query(
-      collection(db, 'museums'),
-      where('region', '==', region),
-      orderBy('name', 'asc'),
-    );
-    const querySnapshot = await getDocs(q);
-    const museums: any[] = [];
-
-    querySnapshot.forEach((doc) => {
-      museums.push({
-        ...doc.data(),
-        id: doc.id,
-      });
-    });
-
-    return museums;
+    return (await getMuseums()).filter((museum) => museum.region === region);
   } catch (error) {
     console.error('❌ Lỗi lấy bảo tàng theo khu vực:', error);
     throw error;
@@ -112,27 +91,10 @@ export const searchMuseums = async (keyword: string) => {
       return [];
     }
 
-    const q = query(
-      collection(db, 'museums'),
-      orderBy('name', 'asc'),
-    );
-    const querySnapshot = await getDocs(q);
-    const museums: any[] = [];
-
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      if (
-        data.name?.toLowerCase().includes(keyword.toLowerCase()) ||
-        data.description?.toLowerCase().includes(keyword.toLowerCase())
-      ) {
-        museums.push({
-          ...data,
-          id: doc.id,
-        });
-      }
-    });
-
-    return museums;
+    const normalized = keyword.toLocaleLowerCase('vi-VN');
+    return (await getMuseums()).filter((museum) =>
+      String(museum.name ?? '').toLocaleLowerCase('vi-VN').includes(normalized)
+      || String(museum.description ?? '').toLocaleLowerCase('vi-VN').includes(normalized));
   } catch (error) {
     console.error('❌ Lỗi tìm kiếm bảo tàng:', error);
     throw error;

@@ -254,9 +254,10 @@ export async function toggleLike(postId: string, userId: string): Promise<boolea
 export function subscribeToReplies(
   postId: string,
   callback: (replies: ForumReply[]) => void,
+  limitCount = 50,
 ): Unsubscribe {
   const repliesRef = collection(db, 'forum', postId, 'replies');
-  const q = query(repliesRef, orderBy('createdAt', 'asc'));
+  const q = query(repliesRef, orderBy('createdAt', 'desc'), limit(Math.min(100, Math.max(10, limitCount))));
 
   return onSnapshot(q, (snap) => {
     const replies: ForumReply[] = snap.docs.map((d) => {
@@ -271,7 +272,7 @@ export function subscribeToReplies(
         createdAt: data.createdAt ?? Timestamp.now(),
       };
     });
-    callback(replies);
+    callback(replies.reverse());
   });
 }
 
@@ -341,7 +342,7 @@ export async function createForumReport(input: CreateForumReportInput): Promise<
   const reason = FORUM_REPORT_REASONS.find((item) => item.code === input.reasonCode);
   if (!reason) throw new Error('Lý do báo cáo không hợp lệ');
 
-  const reportRef = await addDoc(collection(db, 'forum', input.post.id, 'reports'), {
+  const reportRef = await addDoc(collection(db, 'forum_reports'), {
     targetType: 'post',
     postId: input.post.id,
     postPath: `forum/${input.post.id}`,

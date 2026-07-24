@@ -1,7 +1,4 @@
-/**
- * Tab AI Chatbot.
- * UI-only for now; backend will be connected later.
- */
+/** Tab trợ lý AI sử dụng kho tri thức lịch sử đã được kiểm duyệt. */
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
@@ -16,9 +13,11 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Markdown from 'react-native-markdown-display';
 import { BORDER_RADIUS, FONT_SIZES, FONT_WEIGHTS, SPACING } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { AppHeader, Card, Screen } from '@/components/ui';
+import { askHistoryAi } from '@/services/chatAiService';
 
 type ChatRole = 'assistant' | 'user';
 
@@ -26,6 +25,8 @@ interface ChatMessage {
   id: string;
   role: ChatRole;
   content: string;
+  confidence?: number;
+  isError?: boolean;
 }
 
 const QUICK_PROMPTS = [
@@ -48,13 +49,24 @@ function createId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function createMockAnswer(question: string) {
-  return `Mình đã nhận câu hỏi: "${question}". Phần giao diện chat đã sẵn sàng; khi backend AI hoàn thiện, câu trả lời lịch sử sẽ được trả về tại đây.`;
-}
-
 function MessageBubble({ message }: { message: ChatMessage }) {
   const colors = useThemeColors();
   const isUser = message.role === 'user';
+  const markdownStyles = useMemo(() => ({
+    body: { color: colors.text, fontSize: FONT_SIZES.sm, lineHeight: 23 },
+    heading1: { color: colors.text, fontSize: FONT_SIZES.xl, fontWeight: FONT_WEIGHTS.bold, marginTop: 12, marginBottom: 7 },
+    heading2: { color: colors.text, fontSize: FONT_SIZES.lg, fontWeight: FONT_WEIGHTS.bold, marginTop: 11, marginBottom: 6 },
+    heading3: { color: colors.text, fontSize: FONT_SIZES.base, fontWeight: FONT_WEIGHTS.bold, marginTop: 9, marginBottom: 5 },
+    paragraph: { marginTop: 0, marginBottom: 9 },
+    strong: { color: colors.text, fontWeight: FONT_WEIGHTS.bold },
+    bullet_list: { marginBottom: 8 },
+    ordered_list: { marginBottom: 8 },
+    list_item: { marginBottom: 4 },
+    table: { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, marginVertical: 8 },
+    tr: { borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+    th: { backgroundColor: colors.primaryDim, padding: 6 },
+    td: { padding: 6 },
+  }), [colors]);
 
   return (
     <View style={[styles.messageRow, isUser ? styles.userRow : styles.assistantRow]}>
@@ -69,13 +81,16 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           styles.bubble,
           {
             backgroundColor: isUser ? colors.primary : colors.surface,
-            borderColor: isUser ? colors.primary : colors.border,
+            borderColor: message.isError
+              ? colors.error
+              : isUser
+                ? colors.primary
+                : colors.border,
           },
         ]}
       >
-        <Text style={[styles.messageText, { color: isUser ? colors.onPrimary : colors.text }]}>
-          {message.content}
-        </Text>
+        {isUser || message.isError ? <Text style={[styles.messageText, { color: isUser ? colors.onPrimary : colors.text }]}>{message.content}</Text> : <Markdown style={markdownStyles}>{message.content}</Markdown>}
+
       </View>
     </View>
   );
@@ -117,7 +132,7 @@ export default function ExploreScreen() {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, []);
 
-  const sendMessage = useCallback((text: string) => {
+  const sendMessage = useCallback(async (text: string) => {
     const question = text.trim();
     if (!question || isThinking) return;
 
@@ -132,18 +147,36 @@ export default function ExploreScreen() {
     setIsThinking(true);
     scrollToEnd();
 
-    setTimeout(() => {
+    try {
+      const history = messages
+        .filter((message) => message.id !== 'welcome' && !message.isError)
+        .slice(-8)
+        .map(({ role, content }) => ({ role, content }));
+      const result = await askHistoryAi(question, history);
       const assistantMessage: ChatMessage = {
         id: createId(),
         role: 'assistant',
-        content: createMockAnswer(question),
+        content: result.answer,
+        confidence: result.confidence,
       };
-
       setMessages((current) => [...current, assistantMessage]);
+    } catch (error) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: createId(),
+          role: 'assistant',
+          content: error instanceof Error
+            ? error.message
+            : 'Không thể kết nối với trợ lý AI. Vui lòng thử lại.',
+          isError: true,
+        },
+      ]);
+    } finally {
       setIsThinking(false);
       scrollToEnd();
-    }, 650);
-  }, [isThinking, scrollToEnd]);
+    }
+  }, [isThinking, messages, scrollToEnd]);
 
   const footer = useMemo(() => {
     if (!isThinking) return null;

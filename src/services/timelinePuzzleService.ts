@@ -9,6 +9,7 @@
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import { Era, TimelineEvent } from '@/models/Era';
+import { cachedLoad, getStaticJson } from '@/services/contentCache';
 
 const normalizeEvents = (rawEvents: unknown): TimelineEvent[] => {
   if (!Array.isArray(rawEvents)) return [];
@@ -42,10 +43,12 @@ const normalizeEra = (id: string, data: Record<string, unknown>): Era => {
 
 export const getTimelineEras = async (): Promise<Era[]> => {
   try {
-    const snap = await getDocs(collection(db, 'games', 'timelinepuzzle', 'eras'));
-    return snap.docs
-      .map((d) => normalizeEra(d.id, d.data() as Record<string, unknown>))
-      .sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || a.title.localeCompare(b.title));
+    return cachedLoad('timeline-eras', async () => {
+      const staticData = await getStaticJson<Record<string, unknown>[]>('games/timeline-eras.json');
+      if (staticData) return staticData.map((data) => normalizeEra(String(data.id ?? data.slug ?? ''), data));
+      const snap = await getDocs(collection(db, 'games', 'timelinepuzzle', 'eras'));
+      return snap.docs.map((d) => normalizeEra(d.id, d.data() as Record<string, unknown>));
+    }, { ttlMs: 6 * 60 * 60 * 1000 }).then((eras) => eras.sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || a.title.localeCompare(b.title)));
   } catch (e) {
     console.error('Loi getTimelineEras:', e);
     throw e;
@@ -54,6 +57,8 @@ export const getTimelineEras = async (): Promise<Era[]> => {
 
 export const getEraById = async (eraId: string): Promise<Era | null> => {
   try {
+    const cached = (await getTimelineEras()).find((era) => era.eraId === eraId);
+    if (cached) return cached;
     const snap = await getDoc(doc(db, 'games', 'timelinepuzzle', 'eras', eraId));
     if (!snap.exists()) return null;
     return normalizeEra(snap.id, snap.data() as Record<string, unknown>);
