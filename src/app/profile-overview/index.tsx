@@ -17,14 +17,12 @@ import { doc, getDoc } from 'firebase/firestore';
 
 import { db } from '@/services/firebase';
 import { clearUserSession, getUserSession, saveUserSession, SessionUser } from '@/services/userSession';
-import { Fonts, HTML_SHADOWS, SuVietColors, SPACING } from '@/constants/theme';
+import { BORDER_RADIUS, FONT_SIZES, FONT_WEIGHTS, Fonts, HTML_SHADOWS, SPACING, SuVietColors } from '@/constants/theme';
 import { useGamification } from '@/contexts/GamificationContext';
+import { useThemeColors } from '@/contexts/ThemeContext';
 import { BADGE_DEFINITIONS } from '@/services/badgeService';
 import { getRankTier } from '@/services/rankService';
-import { Screen } from '@/components/ui';
-import { BadgeModal } from '@/components/ui/BadgeModal';
-import { RankModal } from '@/components/ui/RankModal';
-import { useTopInset } from '@/components/ui';
+import { Screen, ConfirmModal, RankModal, BadgeModal, useTopInset, Button } from '@/components/ui';
 
 interface MenuItemProps {
   icon: any;
@@ -33,16 +31,17 @@ interface MenuItemProps {
   onPress: () => void;
 }
 
-interface ProfileOverviewProps {
+export interface ProfileOverviewProps {
   embeddedInTab?: boolean;
   onLoggedOut?: () => void;
 }
 
 export function ProfileOverviewContent({
-  embeddedInTab = false,
+  embeddedInTab,
   onLoggedOut,
 }: ProfileOverviewProps) {
   const router = useRouter();
+  const colors = useThemeColors();
   const topInset = useTopInset();
   const { profile, loading: gamificationLoading } = useGamification();
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -60,11 +59,7 @@ export function ProfileOverviewContent({
           setLoading(true);
           const session = await getUserSession();
           if (!session) {
-            if (embeddedInTab) {
-              onLoggedOut?.();
-            } else {
-              router.replace('/auth');
-            }
+            if (active) setUser(null);
             return;
           }
 
@@ -95,7 +90,6 @@ export function ProfileOverviewContent({
           if (active) setUser(mergedUser);
         } catch (error) {
           console.error('Unable to load profile:', error);
-          if (active) Alert.alert('Lỗi', 'Không thể tải thông tin hồ sơ.');
         } finally {
           if (active) setLoading(false);
         }
@@ -108,22 +102,19 @@ export function ProfileOverviewContent({
     }, [router]),
   );
 
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
   const handleLogout = () => {
-    Alert.alert('Đăng xuất', 'Bạn có chắc muốn đăng xuất?', [
-      { text: 'Hủy', style: 'cancel' },
-      {
-        text: 'Đăng xuất',
-        style: 'destructive',
-        onPress: async () => {
-          await clearUserSession();
-          if (embeddedInTab) {
-            onLoggedOut?.();
-          } else {
-            router.replace('/auth');
-          }
-        },
-      },
-    ]);
+    setShowLogoutModal(true);
+  };
+
+  const confirmLogout = async () => {
+    setShowLogoutModal(false);
+    await clearUserSession();
+    setUser(null);
+    if (onLoggedOut) {
+      await onLoggedOut();
+    }
   };
 
   const MenuItem = ({ icon, label, danger, onPress }: MenuItemProps) => (
@@ -152,7 +143,83 @@ export function ProfileOverviewContent({
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={SuVietColors.son} />
         </View>
+      ) : !user ? (
+        /* ═══ GUEST PROFILE VIEW (Màn hình Hồ sơ Khách có nút Đăng nhập / Đăng ký) ═══ */
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} bounces={false}>
+          <LinearGradient
+            colors={[SuVietColors.son, SuVietColors.son2]}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={[styles.topBg, { paddingTop: topInset + 20 }]}
+          >
+            <Text style={styles.headerTitle}>Hồ sơ cá nhân</Text>
+
+            <View style={styles.avatarRow}>
+              <View style={[styles.avatarFrame, { backgroundColor: 'rgba(255,255,255,0.15)', borderWidth: 2, borderColor: SuVietColors.dong }]}>
+                <Ionicons name="person" size={38} color={SuVietColors.dong2} />
+              </View>
+              <View style={styles.nameContainer}>
+                <Text style={styles.userName}>Tài khoản Khách</Text>
+                <Text style={styles.usernameHandle}>Chưa đăng nhập tài khoản</Text>
+              </View>
+            </View>
+          </LinearGradient>
+
+          <View style={styles.bodyContent}>
+            {/* Guest Banner Card */}
+            <View style={[styles.guestCard, HTML_SHADOWS.cardLarge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={[styles.guestIconCircle, { backgroundColor: colors.primaryDim, borderColor: colors.secondary }]}>
+                <Ionicons name="ribbon-sharp" size={32} color={colors.secondary} />
+              </View>
+
+              <Text style={[styles.guestCardTitle, { color: colors.primary }]}>
+                Chào mừng bạn đến với Lịch Sử Việt Nam!
+              </Text>
+
+              <Button
+                label="Đăng Nhập / Đăng Ký Ngay"
+                icon="log-in-outline"
+                onPress={() => router.push('/auth')}
+                size="lg"
+                fullWidth
+                style={{ marginTop: SPACING[3] }}
+              />
+            </View>
+
+            {/* Benefits List */}
+            <View style={styles.sectionHeader}>
+              <Ionicons name="sparkles" size={20} color={SuVietColors.dong} />
+              <Text style={styles.sectionTitle}>Quyền lợi khi Đăng nhập</Text>
+            </View>
+
+            <View style={styles.benefitList}>
+              <View style={[styles.benefitItem, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Ionicons name="trophy-outline" size={22} color={colors.secondary} />
+                <View style={styles.benefitTextWrap}>
+                  <Text style={[styles.benefitTitle, { color: colors.text }]}>Tích lũy XP & Leo Rank</Text>
+                  <Text style={[styles.benefitSub, { color: colors.textSecondary }]}>Thăng cấp bậc hạng từ Tân Binh tới Bậc Thầy Sử Học</Text>
+                </View>
+              </View>
+
+              <View style={[styles.benefitItem, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Ionicons name="medal-outline" size={22} color={colors.secondary} />
+                <View style={styles.benefitTextWrap}>
+                  <Text style={[styles.benefitTitle, { color: colors.text }]}>Sưu tầm Huy hiệu 3D</Text>
+                  <Text style={[styles.benefitSub, { color: colors.textSecondary }]}>Mở khóa các danh hiệu lịch sử độc đáo</Text>
+                </View>
+              </View>
+
+              <View style={[styles.benefitItem, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Ionicons name="chatbubbles-outline" size={22} color={colors.secondary} />
+                <View style={styles.benefitTextWrap}>
+                  <Text style={[styles.benefitTitle, { color: colors.text }]}>Diễn đàn & Thảo luận</Text>
+                  <Text style={[styles.benefitSub, { color: colors.textSecondary }]}>Đăng bài, bình luận và trao đổi cùng cộng đồng yêu Sử</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        </ScrollView>
       ) : (
+        /* ═══ LOGGED IN USER PROFILE VIEW ═══ */
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} bounces={false}>
           {/* ═══ Top Gradient Background ═══ */}
           <LinearGradient
@@ -314,6 +381,19 @@ export function ProfileOverviewContent({
         } : null}
         onClose={() => setSelectedBadge(null)}
       />
+
+      <ConfirmModal
+        visible={showLogoutModal}
+        title="Đăng Xuất"
+        description="Bạn có chắc chắn muốn đăng xuất khỏi tài khoản Lịch Sử Việt Nam không?"
+        subDescription="Hành trình khám phá lịch sử sẽ tạm ngưng cho đến khi bạn đăng nhập lại."
+        icon="log-out-sharp"
+        confirmText="Đăng xuất"
+        cancelText="Hủy"
+        isDanger
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={confirmLogout}
+      />
     </Screen>
   );
 }
@@ -360,6 +440,64 @@ const styles = StyleSheet.create({
   usernameHandle: { fontFamily: Fonts.regular, fontSize: 14, color: SuVietColors.dong },
 
   bodyContent: { paddingHorizontal: 22, marginTop: -40 },
+
+  // Guest Card
+  guestCard: {
+    borderRadius: 24,
+    padding: SPACING[5],
+    borderWidth: 1.5,
+    alignItems: 'center',
+    marginBottom: SPACING[5],
+  },
+  guestIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING[3],
+  },
+  guestCardTitle: {
+    fontSize: FONT_SIZES.lg,
+    fontFamily: Fonts.bold,
+    fontWeight: FONT_WEIGHTS.bold,
+    textAlign: 'center',
+    marginBottom: SPACING[2],
+  },
+  guestCardDesc: {
+    fontSize: FONT_SIZES.sm,
+    fontFamily: Fonts.regular,
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+
+  // Benefits List
+  benefitList: {
+    gap: SPACING[3],
+    marginBottom: SPACING[6],
+  },
+  benefitItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: SPACING[4],
+    borderRadius: BORDER_RADIUS.xl,
+    borderWidth: 1,
+    gap: SPACING[3],
+  },
+  benefitTextWrap: {
+    flex: 1,
+  },
+  benefitTitle: {
+    fontSize: FONT_SIZES.base,
+    fontFamily: Fonts.bold,
+    fontWeight: FONT_WEIGHTS.bold,
+  },
+  benefitSub: {
+    fontSize: FONT_SIZES.xs,
+    fontFamily: Fonts.regular,
+    marginTop: 2,
+  },
 
   // Rank Card
   rankCard: {

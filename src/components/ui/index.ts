@@ -13,3 +13,5 @@ export { HistoryImage } from './HistoryImage';
 export { LoadingState, ErrorState, EmptyState } from './StateViews';
 export { BadgeModal } from './BadgeModal';
 export { RankModal } from './RankModal';
+export { AuthRequiredModal } from './AuthRequiredModal';
+export { ConfirmModal } from './ConfirmModal';

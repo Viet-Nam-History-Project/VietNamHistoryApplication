@@ -1,6 +1,6 @@
 /**
- * Màn hình Đăng nhập / Đăng ký.
- * Hiển thị trước khi người dùng được vào app.
+ * Màn hình Đăng nhập / Đăng ký (Phong cách Sử Việt Hoàng Gia).
+ * Căn chỉnh chuẩn SafeArea cho iPhone & Android.
  */
 
 import React, { useState } from 'react';
@@ -16,21 +16,25 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { loginWithUsername, register, resetPassword } from '@/services/authService';
+import { loginWithUsername, register, resetPassword, signInWithGoogle } from '@/services/authService';
 import { getUserById } from '@/services/userService';
 import { saveUserSession, SessionUser } from '@/services/userSession';
-import { BORDER_RADIUS, FONT_SIZES, FONT_WEIGHTS, SPACING } from '@/constants/theme';
+import { BORDER_RADIUS, FONT_SIZES, FONT_WEIGHTS, Fonts, HTML_SHADOWS, SPACING } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { Screen, Button } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 
 type Mode = 'login' | 'register' | 'forgot';
+type FocusedInput = 'email' | 'username' | 'password' | 'confirmPassword' | null;
 
 export default function AuthScreen() {
   const router = useRouter();
   const colors = useThemeColors();
+  const insets = useSafeAreaInsets();
   const { onLoginSuccess } = useAuth();
+
   const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -39,6 +43,8 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [focusedInput, setFocusedInput] = useState<FocusedInput>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const clearForm = () => {
     setEmail('');
@@ -47,6 +53,7 @@ export default function AuthScreen() {
     setConfirmPassword('');
     setShowPassword(false);
     setShowConfirmPassword(false);
+    setErrorMessage(null);
   };
 
   const switchMode = (newMode: Mode) => {
@@ -56,9 +63,10 @@ export default function AuthScreen() {
 
   /* ────── Đăng nhập ────── */
   const handleLogin = async () => {
+    setErrorMessage(null);
     const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail || !password) {
-      Alert.alert('Lỗi', 'Vui lòng nhập email và mật khẩu');
+      setErrorMessage('Vui lòng nhập đầy đủ email và mật khẩu');
       return;
     }
 
@@ -89,13 +97,13 @@ export default function AuthScreen() {
       const code = (error as { code?: string })?.code;
       let message = 'Đăng nhập thất bại. Vui lòng thử lại.';
       if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
-        message = 'Email hoặc mật khẩu không đúng';
+        message = 'Email hoặc mật khẩu không chính xác';
       } else if (code === 'auth/invalid-email') {
         message = 'Địa chỉ email không hợp lệ';
       } else if (code === 'auth/too-many-requests') {
-        message = 'Quá nhiều lần thử. Vui lòng thử lại sau.';
+        message = 'Quá nhiều lần đăng nhập sai. Vui lòng thử lại sau.';
       }
-      Alert.alert('Lỗi', message);
+      setErrorMessage(message);
     } finally {
       setLoading(false);
     }
@@ -103,19 +111,20 @@ export default function AuthScreen() {
 
   /* ────── Đăng ký ────── */
   const handleRegister = async () => {
+    setErrorMessage(null);
     const trimmedEmail = email.trim().toLowerCase();
     const trimmedUsername = username.trim();
 
     if (!trimmedEmail || !trimmedUsername || !password) {
-      Alert.alert('Lỗi', 'Vui lòng điền đầy đủ thông tin');
+      setErrorMessage('Vui lòng điền đầy đủ tất cả thông tin');
       return;
     }
     if (password.length < 6) {
-      Alert.alert('Lỗi', 'Mật khẩu phải có ít nhất 6 ký tự');
+      setErrorMessage('Mật khẩu phải có độ dài từ 6 ký tự trở lên');
       return;
     }
     if (password !== confirmPassword) {
-      Alert.alert('Lỗi', 'Mật khẩu xác nhận không khớp');
+      setErrorMessage('Mật khẩu xác nhận không khớp');
       return;
     }
 
@@ -129,7 +138,7 @@ export default function AuthScreen() {
 
       Alert.alert(
         'Đăng ký thành công! 🎉',
-        'Tài khoản đã được tạo. Vui lòng đăng nhập để tiếp tục.',
+        'Tài khoản của bạn đã được tạo thành công. Vui lòng đăng nhập để bắt đầu hành trình.',
         [{ text: 'Đăng nhập ngay', onPress: () => switchMode('login') }],
       );
     } catch (error: unknown) {
@@ -137,13 +146,13 @@ export default function AuthScreen() {
       const code = (error as { code?: string })?.code;
       let message = 'Đăng ký thất bại. Vui lòng thử lại.';
       if (code === 'auth/email-already-in-use') {
-        message = 'Email này đã được sử dụng';
+        message = 'Địa chỉ email này đã được tạo tài khoản';
       } else if (code === 'auth/invalid-email') {
         message = 'Địa chỉ email không hợp lệ';
       } else if (code === 'auth/weak-password') {
-        message = 'Mật khẩu quá yếu. Vui lòng chọn mật khẩu mạnh hơn.';
+        message = 'Mật khẩu quá yếu. Vui lòng thêm chữ hoa, số hoặc ký tự.';
       }
-      Alert.alert('Lỗi', message);
+      setErrorMessage(message);
     } finally {
       setLoading(false);
     }
@@ -151,9 +160,10 @@ export default function AuthScreen() {
 
   /* ────── Quên mật khẩu ────── */
   const handleForgotPassword = async () => {
+    setErrorMessage(null);
     const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail) {
-      Alert.alert('Lỗi', 'Vui lòng nhập email');
+      setErrorMessage('Vui lòng nhập địa chỉ email đã đăng ký');
       return;
     }
 
@@ -161,323 +171,472 @@ export default function AuthScreen() {
       setLoading(true);
       await resetPassword(trimmedEmail);
       Alert.alert(
-        'Thành công',
-        'Đã gửi email đặt lại mật khẩu. Vui lòng kiểm tra hộp thư của bạn (bao gồm cả thư rác).',
-        [{ text: 'OK', onPress: () => switchMode('login') }],
+        'Đã gửi liên kết khôi phục 📧',
+        'Vui lòng kiểm tra hộp thư email của bạn (bao gồm cả thư mục Thư rác/Spam).',
+        [{ text: 'Về trang Đăng nhập', onPress: () => switchMode('login') }],
       );
     } catch (error: unknown) {
       console.error('Reset password failed:', error);
       const code = (error as { code?: string })?.code;
-      let message = 'Gửi email thất bại. Vui lòng thử lại.';
+      let message = 'Gửi email khôi phục thất bại.';
       if (code === 'auth/user-not-found') {
-        message = 'Không tìm thấy tài khoản với email này';
+        message = 'Không tìm thấy tài khoản tương ứng với email này';
       } else if (code === 'auth/invalid-email') {
         message = 'Địa chỉ email không hợp lệ';
       } else if (code === 'auth/too-many-requests') {
-        message = 'Quá nhiều lần thử. Vui lòng thử lại sau.';
+        message = 'Thao tác quá nhiều lần. Vui lòng thử lại sau.';
       }
-      Alert.alert('Lỗi', message);
+      setErrorMessage(message);
     } finally {
       setLoading(false);
     }
   };
 
-  /* ────── Styles ────── */
-  const inputStyle = [
-    styles.input,
-    {
-      backgroundColor: colors.surface,
-      borderColor: colors.border,
-      color: colors.text,
-    },
-  ];
+  /* ────── Đăng nhập bằng Google ────── */
+  const handleGoogleSignIn = async () => {
+    setErrorMessage(null);
+    try {
+      setLoading(true);
+      const firebaseUser = await signInWithGoogle();
+      const userData = await getUserById(firebaseUser.uid);
 
-  /* ────── Render Form ────── */
+      const session: SessionUser = {
+        id: firebaseUser.uid,
+        uid: firebaseUser.uid,
+        email: firebaseUser.email || '',
+        username: userData?.username || firebaseUser.displayName?.replace(/\s+/g, '').toLowerCase() || 'google_user',
+        name: firebaseUser.displayName || userData?.displayName || 'Người dùng Google',
+        displayName: firebaseUser.displayName || userData?.displayName || 'Người dùng Google',
+        avatar: firebaseUser.photoURL || userData?.avatar || '',
+        photo: firebaseUser.photoURL || userData?.avatar || '',
+      };
+
+      await saveUserSession(session);
+      await onLoginSuccess();
+      clearForm();
+      router.replace('/(tabs)/period');
+    } catch (error: unknown) {
+      console.error('Google Sign-In failed:', error);
+      const code = (error as { code?: string })?.code;
+      const errText = (error as { message?: string })?.message || '';
+      let message = 'Đăng nhập bằng Google chưa hoàn tất hoặc bị hủy.';
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        message = 'Đã hủy thao tác đăng nhập bằng Google.';
+      } else if (code === 'auth/popup-blocked') {
+        message = 'Cửa sổ đăng nhập bị chặn bởi trình duyệt. Vui lòng thử lại.';
+      } else if (errText) {
+        message = errText;
+      }
+      setErrorMessage(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ────── Style Helpers ────── */
+  const getInputContainerStyle = (inputKey: FocusedInput) => {
+    const isFocused = focusedInput === inputKey;
+    return [
+      styles.inputWrapper,
+      {
+        backgroundColor: colors.surface,
+        borderColor: isFocused ? colors.secondary : colors.border,
+        borderWidth: isFocused ? 1.8 : 1,
+      },
+    ];
+  };
+
   return (
-    <Screen>
+    <Screen safeArea edges={['top', 'bottom']}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          {/* Hero */}
+        <ScrollView
+          contentContainerStyle={[
+            styles.scroll,
+            { paddingTop: Math.max(insets.top > 0 ? insets.top + 8 : SPACING[6], SPACING[6]) },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Hero Header Sử Việt */}
           <View style={styles.hero}>
             <View
               style={[
-                styles.logoCircle,
-                { backgroundColor: colors.primaryDim, borderColor: colors.primary },
+                styles.logoCircle3D,
+                {
+                  backgroundColor: colors.primaryDim,
+                  borderColor: colors.secondary,
+                },
+                HTML_SHADOWS.cardLarge,
               ]}
             >
-              <Ionicons
-                name={mode === 'forgot' ? 'key' : 'flag'}
-                size={40}
-                color={colors.secondary}
-              />
+              <View
+                style={[
+                  styles.logoInnerRing,
+                  { borderColor: colors.secondary },
+                ]}
+              >
+                <Ionicons
+                  name={mode === 'forgot' ? 'key-sharp' : 'ribbon-sharp'}
+                  size={42}
+                  color={colors.secondary}
+                />
+              </View>
             </View>
-            <Text style={[styles.appName, { color: colors.primary }]}>Lịch Sử Việt Nam</Text>
-            <Text style={[styles.tagline, { color: colors.textSecondary }]}>
-              {mode === 'login'
-                ? 'Đăng nhập để tiếp tục'
-                : mode === 'register'
-                  ? 'Tạo tài khoản mới'
-                  : 'Khôi phục mật khẩu'}
+
+            <Text style={[styles.appName, { color: colors.primary }]}>
+              Lịch Sử Việt Nam
             </Text>
+            
+            <Text style={[styles.tagline, { color: colors.textSecondary }]}>
+              Hành trình khám phá 4.000 năm dựng nước & giữ nước
+            </Text>
+
+            {/* Feature Badges */}
+            <View style={styles.badgeRow}>
+              <View style={[styles.miniBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Ionicons name="star" size={12} color={colors.secondary} />
+                <Text style={[styles.miniBadgeText, { color: colors.textSecondary }]}>4.000 Năm</Text>
+              </View>
+              <View style={[styles.miniBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Ionicons name="book" size={12} color={colors.secondary} />
+                <Text style={[styles.miniBadgeText, { color: colors.textSecondary }]}>Tri Thức</Text>
+              </View>
+              <View style={[styles.miniBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Ionicons name="trophy" size={12} color={colors.secondary} />
+                <Text style={[styles.miniBadgeText, { color: colors.textSecondary }]}>Thi Đấu</Text>
+              </View>
+            </View>
           </View>
 
-          {/* Tab Login / Register (ẩn khi ở mode forgot) */}
-          {mode !== 'forgot' && (
-            <View
-              style={[
-                styles.tabRow,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-              ]}
-            >
-              {(['login', 'register'] as Mode[]).map((item) => {
-                const active = mode === item;
-                return (
-                  <TouchableOpacity
-                    key={item}
-                    style={[
-                      styles.tab,
-                      { backgroundColor: active ? colors.primary : 'transparent' },
-                    ]}
-                    onPress={() => switchMode(item)}
-                    activeOpacity={0.85}
-                  >
-                    <Text
+          {/* Form Card Container */}
+          <View
+            style={[
+              styles.cardContainer,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+              HTML_SHADOWS.cardLarge,
+            ]}
+          >
+            {/* Segmented Pill Tab (Login / Register) */}
+            {mode !== 'forgot' && (
+              <View
+                style={[
+                  styles.tabRow,
+                  { backgroundColor: colors.background, borderColor: colors.border },
+                ]}
+              >
+                {(['login', 'register'] as Mode[]).map((item) => {
+                  const active = mode === item;
+                  return (
+                    <TouchableOpacity
+                      key={item}
                       style={[
-                        styles.tabText,
-                        { color: active ? colors.onPrimary : colors.textSecondary },
+                        styles.tab,
+                        active && [
+                          styles.activeTab,
+                          { backgroundColor: colors.primary },
+                          HTML_SHADOWS.button,
+                        ],
                       ]}
+                      onPress={() => switchMode(item)}
+                      activeOpacity={0.85}
                     >
-                      {item === 'login' ? 'Đăng nhập' : 'Đăng ký'}
+                      <Text
+                        style={[
+                          styles.tabText,
+                          {
+                            color: active ? colors.onPrimary : colors.textSecondary,
+                            fontWeight: active ? FONT_WEIGHTS.bold : FONT_WEIGHTS.medium,
+                          },
+                        ]}
+                      >
+                        {item === 'login' ? 'Đăng nhập' : 'Đăng ký tài khoản'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* Error Message Banner */}
+            {errorMessage && (
+              <View style={[styles.errorBanner, { backgroundColor: colors.error + '18', borderColor: colors.error }]}>
+                <Ionicons name="alert-circle-outline" size={18} color={colors.error} />
+                <Text style={[styles.errorText, { color: colors.error }]}>
+                  {errorMessage}
+                </Text>
+              </View>
+            )}
+
+            {/* Form Fields */}
+            <View style={styles.formFields}>
+              {/* === MODE: LOGIN === */}
+              {mode === 'login' && (
+                <>
+                  <View style={getInputContainerStyle('email')}>
+                    <Ionicons
+                      name="mail-outline"
+                      size={20}
+                      color={focusedInput === 'email' ? colors.secondary : colors.textMuted}
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={[styles.input, { color: colors.text }]}
+                      placeholder="Email đăng ký"
+                      placeholderTextColor={colors.textMuted}
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      value={email}
+                      onChangeText={setEmail}
+                      onFocus={() => setFocusedInput('email')}
+                      onBlur={() => setFocusedInput(null)}
+                    />
+                  </View>
+
+                  <View style={getInputContainerStyle('password')}>
+                    <Ionicons
+                      name="lock-closed-outline"
+                      size={20}
+                      color={focusedInput === 'password' ? colors.secondary : colors.textMuted}
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={[styles.input, styles.inputRightPadding, { color: colors.text }]}
+                      placeholder="Mật khẩu"
+                      placeholderTextColor={colors.textMuted}
+                      secureTextEntry={!showPassword}
+                      value={password}
+                      onChangeText={setPassword}
+                      onFocus={() => setFocusedInput('password')}
+                      onBlur={() => setFocusedInput(null)}
+                    />
+                    <TouchableOpacity
+                      style={styles.eyeIcon}
+                      onPress={() => setShowPassword(!showPassword)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons
+                        name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                        size={20}
+                        color={colors.textMuted}
+                      />
+                    </TouchableOpacity>
+                  </View>
+
+                  <TouchableOpacity
+                    onPress={() => switchMode('forgot')}
+                    style={styles.forgotLink}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.linkText, { color: colors.primary }]}>
+                      Quên mật khẩu?
                     </Text>
                   </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
 
-          {/* Form */}
-          <View style={styles.form}>
-            {/* === MODE: LOGIN === */}
-            {mode === 'login' && (
-              <>
-                <View style={styles.inputWrapper}>
-                  <Ionicons
-                    name="mail-outline"
-                    size={20}
-                    color={colors.textMuted}
-                    style={styles.inputIcon}
+                  <Button
+                    label="Đăng Nhập Ngay"
+                    icon="log-in-outline"
+                    loading={loading}
+                    onPress={handleLogin}
+                    size="lg"
+                    style={styles.actionButton}
                   />
-                  <TextInput
-                    style={[inputStyle, styles.inputWithIcon]}
-                    placeholder="Email"
-                    placeholderTextColor={colors.textMuted}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    value={email}
-                    onChangeText={setEmail}
-                  />
-                </View>
+                </>
+              )}
 
-                <View style={styles.inputWrapper}>
-                  <Ionicons
-                    name="lock-closed-outline"
-                    size={20}
-                    color={colors.textMuted}
-                    style={styles.inputIcon}
-                  />
-                  <TextInput
-                    style={[inputStyle, styles.inputWithIcon]}
-                    placeholder="Mật khẩu"
-                    placeholderTextColor={colors.textMuted}
-                    secureTextEntry={!showPassword}
-                    value={password}
-                    onChangeText={setPassword}
-                  />
-                  <TouchableOpacity
-                    style={styles.eyeIcon}
-                    onPress={() => setShowPassword(!showPassword)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
+              {/* === MODE: REGISTER === */}
+              {mode === 'register' && (
+                <>
+                  <View style={getInputContainerStyle('email')}>
                     <Ionicons
-                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      name="mail-outline"
                       size={20}
-                      color={colors.textMuted}
+                      color={focusedInput === 'email' ? colors.secondary : colors.textMuted}
+                      style={styles.inputIcon}
                     />
-                  </TouchableOpacity>
-                </View>
+                    <TextInput
+                      style={[styles.input, { color: colors.text }]}
+                      placeholder="Địa chỉ Email"
+                      placeholderTextColor={colors.textMuted}
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      value={email}
+                      onChangeText={setEmail}
+                      onFocus={() => setFocusedInput('email')}
+                      onBlur={() => setFocusedInput(null)}
+                    />
+                  </View>
 
-                <TouchableOpacity
-                  onPress={() => switchMode('forgot')}
-                  style={styles.forgotLink}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.linkText, { color: colors.primary }]}>
-                    Quên mật khẩu?
+                  <View style={getInputContainerStyle('username')}>
+                    <Ionicons
+                      name="person-outline"
+                      size={20}
+                      color={focusedInput === 'username' ? colors.secondary : colors.textMuted}
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={[styles.input, { color: colors.text }]}
+                      placeholder="Tên người dùng (Username)"
+                      placeholderTextColor={colors.textMuted}
+                      autoCapitalize="none"
+                      value={username}
+                      onChangeText={setUsername}
+                      onFocus={() => setFocusedInput('username')}
+                      onBlur={() => setFocusedInput(null)}
+                    />
+                  </View>
+
+                  <View style={getInputContainerStyle('password')}>
+                    <Ionicons
+                      name="lock-closed-outline"
+                      size={20}
+                      color={focusedInput === 'password' ? colors.secondary : colors.textMuted}
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={[styles.input, styles.inputRightPadding, { color: colors.text }]}
+                      placeholder="Mật khẩu (tối thiểu 6 ký tự)"
+                      placeholderTextColor={colors.textMuted}
+                      secureTextEntry={!showPassword}
+                      value={password}
+                      onChangeText={setPassword}
+                      onFocus={() => setFocusedInput('password')}
+                      onBlur={() => setFocusedInput(null)}
+                    />
+                    <TouchableOpacity
+                      style={styles.eyeIcon}
+                      onPress={() => setShowPassword(!showPassword)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons
+                        name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                        size={20}
+                        color={colors.textMuted}
+                      />
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={getInputContainerStyle('confirmPassword')}>
+                    <Ionicons
+                      name="shield-checkmark-outline"
+                      size={20}
+                      color={focusedInput === 'confirmPassword' ? colors.secondary : colors.textMuted}
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={[styles.input, styles.inputRightPadding, { color: colors.text }]}
+                      placeholder="Xác nhận lại mật khẩu"
+                      placeholderTextColor={colors.textMuted}
+                      secureTextEntry={!showConfirmPassword}
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                      onFocus={() => setFocusedInput('confirmPassword')}
+                      onBlur={() => setFocusedInput(null)}
+                    />
+                    <TouchableOpacity
+                      style={styles.eyeIcon}
+                      onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons
+                        name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                        size={20}
+                        color={colors.textMuted}
+                      />
+                    </TouchableOpacity>
+                  </View>
+
+                  <Button
+                    label="Tạo Tài Khoản"
+                    icon="person-add-outline"
+                    loading={loading}
+                    onPress={handleRegister}
+                    size="lg"
+                    style={styles.actionButton}
+                  />
+                </>
+              )}
+
+              {/* === MODE: FORGOT PASSWORD === */}
+              {mode === 'forgot' && (
+                <>
+                  <Text style={[styles.forgotDesc, { color: colors.textSecondary }]}>
+                    Nhập địa chỉ email đăng ký. Chúng tôi sẽ gửi liên kết khôi phục mật khẩu trực tiếp tới hộp thư của bạn.
                   </Text>
-                </TouchableOpacity>
 
-                <Button
-                  label="Đăng nhập"
-                  icon="log-in-outline"
-                  loading={loading}
-                  onPress={handleLogin}
-                  size="lg"
-                  style={{ marginTop: SPACING[1] }}
-                />
-              </>
-            )}
-
-            {/* === MODE: REGISTER === */}
-            {mode === 'register' && (
-              <>
-                <View style={styles.inputWrapper}>
-                  <Ionicons
-                    name="mail-outline"
-                    size={20}
-                    color={colors.textMuted}
-                    style={styles.inputIcon}
-                  />
-                  <TextInput
-                    style={[inputStyle, styles.inputWithIcon]}
-                    placeholder="Email"
-                    placeholderTextColor={colors.textMuted}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    value={email}
-                    onChangeText={setEmail}
-                  />
-                </View>
-
-                <View style={styles.inputWrapper}>
-                  <Ionicons
-                    name="person-outline"
-                    size={20}
-                    color={colors.textMuted}
-                    style={styles.inputIcon}
-                  />
-                  <TextInput
-                    style={[inputStyle, styles.inputWithIcon]}
-                    placeholder="Tên đăng nhập"
-                    placeholderTextColor={colors.textMuted}
-                    autoCapitalize="none"
-                    value={username}
-                    onChangeText={setUsername}
-                  />
-                </View>
-
-                <View style={styles.inputWrapper}>
-                  <Ionicons
-                    name="lock-closed-outline"
-                    size={20}
-                    color={colors.textMuted}
-                    style={styles.inputIcon}
-                  />
-                  <TextInput
-                    style={[inputStyle, styles.inputWithIcon]}
-                    placeholder="Mật khẩu"
-                    placeholderTextColor={colors.textMuted}
-                    secureTextEntry={!showPassword}
-                    value={password}
-                    onChangeText={setPassword}
-                  />
-                  <TouchableOpacity
-                    style={styles.eyeIcon}
-                    onPress={() => setShowPassword(!showPassword)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
+                  <View style={getInputContainerStyle('email')}>
                     <Ionicons
-                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      name="mail-outline"
                       size={20}
-                      color={colors.textMuted}
+                      color={focusedInput === 'email' ? colors.secondary : colors.textMuted}
+                      style={styles.inputIcon}
                     />
-                  </TouchableOpacity>
-                </View>
+                    <TextInput
+                      style={[styles.input, { color: colors.text }]}
+                      placeholder="Nhập email của bạn"
+                      placeholderTextColor={colors.textMuted}
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      value={email}
+                      onChangeText={setEmail}
+                      onFocus={() => setFocusedInput('email')}
+                      onBlur={() => setFocusedInput(null)}
+                    />
+                  </View>
 
-                <View style={styles.inputWrapper}>
-                  <Ionicons
-                    name="shield-checkmark-outline"
-                    size={20}
-                    color={colors.textMuted}
-                    style={styles.inputIcon}
+                  <Button
+                    label="Gửi Email Khôi Phục"
+                    icon="paper-plane-outline"
+                    loading={loading}
+                    onPress={handleForgotPassword}
+                    size="lg"
+                    style={styles.actionButton}
                   />
-                  <TextInput
-                    style={[inputStyle, styles.inputWithIcon]}
-                    placeholder="Xác nhận mật khẩu"
-                    placeholderTextColor={colors.textMuted}
-                    secureTextEntry={!showConfirmPassword}
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                  />
+
                   <TouchableOpacity
-                    style={styles.eyeIcon}
-                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    onPress={() => switchMode('login')}
+                    style={styles.backLink}
+                    activeOpacity={0.75}
                   >
-                    <Ionicons
-                      name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
-                      size={20}
-                      color={colors.textMuted}
-                    />
+                    <Ionicons name="arrow-back" size={18} color={colors.primary} />
+                    <Text style={[styles.linkText, { color: colors.primary, marginLeft: 6 }]}>
+                      Quay lại trang Đăng nhập
+                    </Text>
                   </TouchableOpacity>
-                </View>
+                </>
+              )}
+            </View>
 
-                <Button
-                  label="Đăng ký"
-                  icon="person-add-outline"
-                  loading={loading}
-                  onPress={handleRegister}
-                  size="lg"
-                  style={{ marginTop: SPACING[2] }}
-                />
-              </>
-            )}
-
-            {/* === MODE: FORGOT PASSWORD === */}
-            {mode === 'forgot' && (
+            {/* Divider HOẶC & Nút Đăng Nhập Google */}
+            {mode !== 'forgot' && (
               <>
-                <Text style={[styles.forgotDesc, { color: colors.textSecondary }]}>
-                  Nhập email bạn đã đăng ký. Chúng tôi sẽ gửi link đặt lại mật khẩu về hộp thư
-                  của bạn.
-                </Text>
-
-                <View style={styles.inputWrapper}>
-                  <Ionicons
-                    name="mail-outline"
-                    size={20}
-                    color={colors.textMuted}
-                    style={styles.inputIcon}
-                  />
-                  <TextInput
-                    style={[inputStyle, styles.inputWithIcon]}
-                    placeholder="Email"
-                    placeholderTextColor={colors.textMuted}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    value={email}
-                    onChangeText={setEmail}
-                  />
+                <View style={styles.dividerRow}>
+                  <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+                  <Text style={[styles.dividerText, { color: colors.textMuted }]}>HOẶC</Text>
+                  <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
                 </View>
-
-                <Button
-                  label="Gửi email đặt lại mật khẩu"
-                  icon="send-outline"
-                  loading={loading}
-                  onPress={handleForgotPassword}
-                  size="lg"
-                  style={{ marginTop: SPACING[2] }}
-                />
 
                 <TouchableOpacity
-                  onPress={() => switchMode('login')}
-                  style={styles.backLink}
-                  activeOpacity={0.7}
+                  style={[
+                    styles.googleButton,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                    },
+                    HTML_SHADOWS.card,
+                  ]}
+                  onPress={handleGoogleSignIn}
+                  disabled={loading}
+                  activeOpacity={0.8}
                 >
-                  <Ionicons name="arrow-back" size={16} color={colors.primary} />
-                  <Text style={[styles.linkText, { color: colors.primary, marginLeft: 4 }]}>
-                    Quay lại đăng nhập
+                  <Ionicons name="logo-google" size={20} color="#EA4335" />
+                  <Text style={[styles.googleButtonText, { color: colors.text }]}>
+                    Đăng nhập bằng Google
                   </Text>
                 </TouchableOpacity>
               </>
@@ -491,83 +650,190 @@ export default function AuthScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  scroll: { flexGrow: 1, paddingBottom: SPACING[8] },
-  hero: { alignItems: 'center', paddingTop: SPACING[10], paddingBottom: SPACING[5] },
-  logoCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+  scroll: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: SPACING[5],
+    paddingBottom: SPACING[8],
+  },
+  hero: {
+    alignItems: 'center',
+    marginBottom: SPACING[5],
+  },
+  logoCircle3D: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
+    borderWidth: 2.5,
     marginBottom: SPACING[3],
+    padding: 4,
+  },
+  logoInnerRing: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 44,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   appName: {
-    fontSize: FONT_SIZES['2xl'],
+    fontSize: FONT_SIZES['3xl'],
+    fontFamily: Fonts.bold,
     fontWeight: FONT_WEIGHTS.bold,
-    letterSpacing: 0.3,
+    letterSpacing: 0.5,
+    textAlign: 'center',
   },
-  tagline: { fontSize: FONT_SIZES.sm, marginTop: 4 },
+  tagline: {
+    fontSize: FONT_SIZES.sm,
+    fontFamily: Fonts.medium,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING[2],
+    marginTop: SPACING[3],
+  },
+  miniBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: BORDER_RADIUS.full,
+    borderWidth: 1,
+  },
+  miniBadgeText: {
+    fontSize: FONT_SIZES.xs,
+    fontFamily: Fonts.semibold,
+    fontWeight: FONT_WEIGHTS.semibold,
+  },
+  cardContainer: {
+    borderRadius: BORDER_RADIUS['2xl'],
+    padding: SPACING[5],
+    borderWidth: 1,
+  },
   tabRow: {
     flexDirection: 'row',
-    marginHorizontal: SPACING[5],
     borderRadius: BORDER_RADIUS.full,
     padding: 4,
-    borderWidth: StyleSheet.hairlineWidth,
-    gap: 4,
+    borderWidth: 1,
+    marginBottom: SPACING[4],
   },
   tab: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 12,
     alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: BORDER_RADIUS.full,
   },
-  tabText: { fontSize: FONT_SIZES.sm, fontWeight: FONT_WEIGHTS.bold },
-  form: { padding: SPACING[5], gap: SPACING[3] },
+  activeTab: {
+    borderRadius: BORDER_RADIUS.full,
+  },
+  tabText: {
+    fontSize: FONT_SIZES.sm,
+    fontFamily: Fonts.bold,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: SPACING[3],
+    borderRadius: BORDER_RADIUS.lg,
+    borderWidth: 1,
+    marginBottom: SPACING[4],
+  },
+  errorText: {
+    flex: 1,
+    fontSize: FONT_SIZES.sm,
+    fontFamily: Fonts.medium,
+  },
+  formFields: {
+    gap: 14,
+  },
   inputWrapper: {
-    position: 'relative',
-    justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: BORDER_RADIUS.xl,
+    paddingHorizontal: SPACING[4],
+    height: 54,
   },
   inputIcon: {
-    position: 'absolute',
-    left: SPACING[3],
-    zIndex: 1,
+    marginRight: SPACING[3],
   },
-  inputWithIcon: {
-    paddingLeft: SPACING[3] + 28,
+  input: {
+    flex: 1,
+    fontSize: FONT_SIZES.base,
+    fontFamily: Fonts.regular,
+    height: '100%',
+  },
+  inputRightPadding: {
+    paddingRight: SPACING[6],
   },
   eyeIcon: {
     position: 'absolute',
-    right: SPACING[3],
-    zIndex: 1,
-  },
-  input: {
-    borderRadius: BORDER_RADIUS.lg,
-    paddingHorizontal: SPACING[4],
-    paddingVertical: 14,
-    fontSize: FONT_SIZES.base,
-    borderWidth: 1,
+    right: SPACING[4],
   },
   forgotLink: {
     alignSelf: 'flex-end',
     paddingVertical: 2,
+    marginTop: -4,
+    marginBottom: 4,
   },
   linkText: {
     fontSize: FONT_SIZES.sm,
+    fontFamily: Fonts.semibold,
     fontWeight: FONT_WEIGHTS.semibold,
   },
   forgotDesc: {
     fontSize: FONT_SIZES.sm,
+    fontFamily: Fonts.regular,
     lineHeight: 22,
     textAlign: 'center',
     marginBottom: SPACING[2],
-    paddingHorizontal: SPACING[2],
+  },
+  actionButton: {
+    marginTop: SPACING[2],
   },
   backLink: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: SPACING[2],
+    paddingVertical: SPACING[3],
     marginTop: SPACING[1],
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: SPACING[4],
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    fontSize: FONT_SIZES.xs,
+    fontFamily: Fonts.semibold,
+    fontWeight: FONT_WEIGHTS.semibold,
+    marginHorizontal: SPACING[3],
+  },
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 52,
+    borderRadius: BORDER_RADIUS.xl,
+    borderWidth: 1.5,
+    gap: SPACING[3],
+  },
+  googleButtonText: {
+    fontSize: FONT_SIZES.base,
+    fontFamily: Fonts.bold,
+    fontWeight: FONT_WEIGHTS.bold,
   },
 });

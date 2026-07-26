@@ -336,7 +336,7 @@ export default function SplashScreen() {
     );
 
     setTimeout(() => {
-      router.replace(user ? '/(tabs)/period' : '/auth');
+      router.replace('/(tabs)/period');
     }, 250);
   };
 

@@ -6,6 +6,7 @@
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   StyleSheet,
@@ -20,7 +21,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
-import { Screen } from '@/components/ui';
+import { Screen, AuthRequiredModal } from '@/components/ui';
 import { Fonts, HTML_SHADOWS, SuVietColors, SPACING } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGamification } from '@/contexts/GamificationContext';
@@ -119,10 +120,16 @@ export default function ForumScreen() {
     loadPosts(true, newSort);
   };
 
+  const [authModalVisible, setAuthModalVisible] = useState(false);
+
   useFocusEffect(
     useCallback(() => {
+      if (!user) {
+        setAuthModalVisible(true);
+        return;
+      }
       loadPosts(true);
-    }, [])
+    }, [user, loadPosts])
   );
 
   const handleLoadMore = () => {
@@ -360,6 +367,16 @@ export default function ForumScreen() {
         post={reportPost}
         reporter={user}
         onClose={() => setReportPost(null)}
+      />
+
+      <AuthRequiredModal
+        visible={authModalVisible}
+        featureName="Diễn đàn"
+        onClose={() => {
+          setAuthModalVisible(false);
+          router.back();
+        }}
+        onConfirmLogin={() => router.push('/auth')}
       />
     </Screen>
   );
