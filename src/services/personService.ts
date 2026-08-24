@@ -48,7 +48,10 @@ export const getPersonsByPeriod = async (periodSlug: string): Promise<PersonList
   try {
     return cachedLoad(`persons:${periodSlug}`, async () => {
       const staticData = await getStaticJson<PersonListItem[]>(`persons/${periodSlug}/index.json`);
-      if (staticData) return staticData.filter((item) => item.status === 'published');
+      // CDN có thể đang giữ manifest cũ trong lúc nội dung vừa được xuất bản.
+      // Danh sách rỗng khi đó không phải bằng chứng period thực sự không có người;
+      // fallback Firestore để tránh màn hình "không có nhân vật" giả.
+      if (staticData?.length) return staticData.filter((item) => item.status === 'published');
       const periodSnap = await getDoc(doc(db, 'periods_person', periodSlug));
       if (!periodSnap.exists() || periodSnap.data().status !== 'published') return [];
       const q = query(collection(db, 'periods_person', periodSlug, 'persons'), orderBy('sortOrder', 'asc'));

@@ -22,7 +22,7 @@ export const getMuseums = async (forceRefresh = false) => {
   try {
     return cachedLoad<any[]>('museums', async () => {
       const staticData = await getStaticJson<any[]>('museums.json');
-      if (staticData) return staticData;
+      if (staticData?.length) return staticData;
       const q = query(collection(db, 'museums'), orderBy('name', 'asc'));
       const querySnapshot = await getDocs(q);
       return querySnapshot.docs.map((document) => ({ ...document.data(), id: document.id }));

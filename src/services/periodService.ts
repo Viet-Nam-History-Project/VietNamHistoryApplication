@@ -28,7 +28,7 @@ export const getPeriods = async (forceRefresh = false): Promise<Period[]> => {
   try {
     return cachedLoad('periods', async () => {
       const staticData = await getStaticJson<Period[]>('periods.json');
-      if (staticData) return staticData;
+      if (staticData?.length) return staticData;
       const q = query(collection(db, 'periods'), orderBy('sortOrder', 'asc'));
       const querySnapshot = await getDocs(q);
       return querySnapshot.docs.map((d) => ({ ...d.data(), id: d.id, slug: d.id } as Period));

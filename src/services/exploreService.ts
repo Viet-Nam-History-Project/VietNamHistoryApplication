@@ -20,7 +20,7 @@ export const getExploreItems = async (forceRefresh = false): Promise<ExploreItem
   try {
     return cachedLoad('explore', async () => {
       const staticData = await getStaticJson<ExploreItem[]>('explore.json');
-      if (staticData) return staticData;
+      if (staticData?.length) return staticData;
       const q = query(collection(db, 'explore'), orderBy('sortOrder', 'asc'));
       const snap = await getDocs(q);
       return snap.docs.map((d) => ({ ...d.data(), id: d.id, slug: d.id } as ExploreItem));

@@ -16,7 +16,7 @@ import { cachedLoad, getStaticJson } from '@/services/contentCache';
 async function getAllEvents(): Promise<Event[]> {
   return cachedLoad('events:all', async () => {
     const staticData = await getStaticJson<Event[]>('events.json');
-    if (staticData) return staticData;
+    if (staticData?.length) return staticData;
     const snapshot = await getDocs(collection(db, 'events'));
     return snapshot.docs.map((document) => ({ ...document.data(), id: document.id } as Event));
   }, { ttlMs: 6 * 60 * 60 * 1000 });

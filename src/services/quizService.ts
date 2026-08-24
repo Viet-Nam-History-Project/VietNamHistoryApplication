@@ -16,7 +16,7 @@ export const getQuizzes = async (): Promise<QuizItem[]> => {
   try {
     return cachedLoad('quizzes', async () => {
       const staticData = await getStaticJson<QuizItem[]>('games/quizzes.json');
-      if (staticData) return staticData;
+      if (staticData?.length) return staticData;
       const q = query(collection(db, 'games', QUIZ_DOC, 'quizzes'));
       const snap = await getDocs(q);
       return snap.docs.map((d) => ({ ...d.data(), id: d.id } as QuizItem));
@@ -52,7 +52,7 @@ export const getQuestionsByQuiz = async (
   try {
     return cachedLoad(`quiz-questions:${quizId}`, async () => {
       const staticData = await getStaticJson<GameQuestion[]>(`games/quizzes/${quizId}/questions.json`);
-      if (staticData) return staticData;
+      if (staticData?.length) return staticData;
       const q = query(collection(db, 'games', QUIZ_DOC, 'quizzes', quizId, 'questions'), orderBy('orderQuestion'));
       const snap = await getDocs(q);
       return snap.docs.map((d) => {

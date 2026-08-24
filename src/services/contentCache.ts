@@ -2,10 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CACHE_PREFIX = '@history-content:';
 const DEFAULT_TTL_MS = 12 * 60 * 60 * 1000;
-const memory = new Map<string, { expiresAt: number; value: unknown }>();
+type CacheEnvelope<T> = { expiresAt: number; value: T; contentVersion?: string };
+const memory = new Map<string, CacheEnvelope<unknown>>();
 const inFlight = new Map<string, Promise<unknown>>();
-
-type CacheEnvelope<T> = { expiresAt: number; value: T };
 
 export async function cachedLoad<T>(
   key: string,
@@ -14,14 +13,18 @@ export async function cachedLoad<T>(
 ): Promise<T> {
   const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
   const storageKey = `${CACHE_PREFIX}${key}`;
+  // Các service dùng cachedLoad đều là nội dung lịch sử tĩnh. Kiểm tra manifest
+  // trước khi trả cache để bản publish mới có hiệu lực mà người dùng không phải
+  // xóa dữ liệu App hoặc chờ hết TTL 6–12 giờ.
+  const contentVersion = (await loadManifest())?.contentVersion;
   if (!options.forceRefresh) {
     const local = memory.get(storageKey);
-    if (local && local.expiresAt > Date.now()) return local.value as T;
+    if (local && local.expiresAt > Date.now() && (!contentVersion || local.contentVersion === contentVersion)) return local.value as T;
     try {
       const raw = await AsyncStorage.getItem(storageKey);
       if (raw) {
         const cached = JSON.parse(raw) as CacheEnvelope<T>;
-        if (cached.expiresAt > Date.now()) {
+        if (cached.expiresAt > Date.now() && (!contentVersion || cached.contentVersion === contentVersion)) {
           memory.set(storageKey, cached);
           return cached.value;
         }
@@ -34,7 +37,7 @@ export async function cachedLoad<T>(
   const running = inFlight.get(storageKey);
   if (running) return running as Promise<T>;
   const request = loader().then(async (value) => {
-    const envelope: CacheEnvelope<T> = { expiresAt: Date.now() + ttlMs, value };
+    const envelope: CacheEnvelope<T> = { expiresAt: Date.now() + ttlMs, value, contentVersion };
     memory.set(storageKey, envelope);
     await AsyncStorage.setItem(storageKey, JSON.stringify(envelope));
     return value;
@@ -56,7 +59,7 @@ interface StaticManifest {
 }
 
 const STATIC_CACHE_PREFIX = '@history-static:';
-const MANIFEST_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const MANIFEST_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 let manifestMemory: StaticManifest | null = null;
 let manifestCheckedAt = 0;
 

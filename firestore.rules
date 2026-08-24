@@ -55,8 +55,9 @@ service cloud.firestore {
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.keys().hasOnly([
           'title', 'content', 'authorId', 'authorName', 'authorPhoto', 'authorRank',
-          'likeCount', 'likes', 'replyCount', 'postId', 'createdAt'
-        ]);
+          'likeCount', 'likes', 'replyCount', 'isHidden', 'postId', 'createdAt'
+        ])
+        && request.resource.data.isHidden == false;
       allow update: if signedIn()
         && resource.data.isHidden != true
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([

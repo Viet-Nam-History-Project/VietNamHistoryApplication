@@ -17,6 +17,7 @@ import {
   getDoc,
   getDocs,
   query,
+  where,
   orderBy,
   limit,
   startAfter,
@@ -158,9 +159,13 @@ export async function getForumPosts(
     orderDirection = 'desc';
   }
 
-  let q = startAfterDoc
-    ? query(forumRef, orderBy(orderField, orderDirection), startAfter(startAfterDoc), limit(limitCount + 1))
-    : query(forumRef, orderBy(orderField, orderDirection), limit(limitCount + 1));
+  // Rules chỉ cho phép đọc bài công khai. Điều kiện này phải nằm trong query
+  // (không chỉ lọc ở client), nếu không Firestore sẽ từ chối toàn bộ query vì
+  // nó có thể trả về cả bài đã bị moderator ẩn.
+  const constraints = [where('isHidden', '==', false), orderBy(orderField, orderDirection)];
+  const q = startAfterDoc
+    ? query(forumRef, ...constraints, startAfter(startAfterDoc), limit(limitCount + 1))
+    : query(forumRef, ...constraints, limit(limitCount + 1));
 
   const snap = await getDocs(q);
   const allDocs = snap.docs;
@@ -327,6 +332,7 @@ export async function createPost(input: CreatePostInput): Promise<string> {
     likeCount: 0,
     likes: [],
     replyCount: 0,
+    isHidden: false,
     postId: null,
     createdAt: serverTimestamp(),
   });

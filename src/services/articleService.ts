@@ -22,7 +22,7 @@ export const getArticles = async (forceRefresh = false) => {
   try {
     return cachedLoad<any[]>('articles', async () => {
       const staticData = await getStaticJson<any[]>('articles.json');
-      if (staticData) return staticData;
+      if (staticData?.length) return staticData;
       const q = query(collection(db, 'articles'), orderBy('createdAt', 'desc'));
       const querySnapshot = await getDocs(q);
       return querySnapshot.docs.map((document) => ({ ...document.data(), id: document.id }));

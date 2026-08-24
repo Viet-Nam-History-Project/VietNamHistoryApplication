@@ -27,7 +27,7 @@ export const getStagesByPeriod = async (periodSlug: string): Promise<Stage[]> =>
     if (!periodSlug) throw new Error('periodSlug không được để trống');
     return cachedLoad(`stages:${periodSlug}`, async () => {
       const staticData = await getStaticJson<Stage[]>(`periods/${periodSlug}/stages.json`);
-      if (staticData) return staticData;
+      if (staticData?.length) return staticData;
       const q = query(collection(db, 'periods', periodSlug, 'stages'), orderBy('sortOrder', 'asc'));
       const snapshot = await getDocs(q);
       return snapshot.docs.map((d) => ({ ...d.data(), id: d.id, periodSlug } as Stage));
@@ -78,7 +78,7 @@ export const getEventsByStage = async (
   try {
     return cachedLoad(`events:${periodSlug}:${stageSlug}`, async () => {
       const staticData = await getStaticJson<Event[]>(`periods/${periodSlug}/stages/${stageSlug}/events.json`);
-      if (staticData) return staticData;
+      if (staticData?.length) return staticData;
       const q = query(collection(db, 'periods', periodSlug, 'stages', stageSlug, 'events'), orderBy('sortOrder', 'asc'));
       const snapshot = await getDocs(q);
       return snapshot.docs.map((d) => ({ ...d.data(), id: d.id, periodSlug, stageSlug } as Event));

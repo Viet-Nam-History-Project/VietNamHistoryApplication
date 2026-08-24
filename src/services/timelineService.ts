@@ -17,7 +17,7 @@ import { cachedLoad, getStaticJson } from '@/services/contentCache';
 async function getAllTimelines(): Promise<any[]> {
   return cachedLoad('timelines:all', async () => {
     const staticData = await getStaticJson<any[]>('timelines.json');
-    if (staticData) return staticData;
+    if (staticData?.length) return staticData;
     const snapshot = await getDocs(query(collection(db, 'timelines'), orderBy('year', 'asc')));
     return snapshot.docs.map((document) => ({ ...document.data(), id: document.id }));
   }, { ttlMs: 6 * 60 * 60 * 1000 });

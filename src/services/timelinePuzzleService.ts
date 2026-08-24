@@ -45,7 +45,7 @@ export const getTimelineEras = async (): Promise<Era[]> => {
   try {
     return cachedLoad('timeline-eras', async () => {
       const staticData = await getStaticJson<Record<string, unknown>[]>('games/timeline-eras.json');
-      if (staticData) return staticData.map((data) => normalizeEra(String(data.id ?? data.slug ?? ''), data));
+      if (staticData?.length) return staticData.map((data) => normalizeEra(String(data.id ?? data.slug ?? ''), data));
       const snap = await getDocs(collection(db, 'games', 'timelinepuzzle', 'eras'));
       return snap.docs.map((d) => normalizeEra(d.id, d.data() as Record<string, unknown>));
     }, { ttlMs: 6 * 60 * 60 * 1000 }).then((eras) => eras.sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || a.title.localeCompare(b.title)));
