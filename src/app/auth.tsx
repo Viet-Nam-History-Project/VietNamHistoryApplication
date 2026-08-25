@@ -3,7 +3,7 @@
  * Căn chỉnh chuẩn SafeArea cho iPhone & Android.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -18,7 +18,13 @@ import {
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { loginWithUsername, register, resetPassword, signInWithGoogle } from '@/services/authService';
+import {
+  loginWithUsername,
+  register,
+  resetPassword,
+  signInWithGoogleNative,
+  signInWithGoogleWeb,
+} from '@/services/authService';
 import { getUserById } from '@/services/userService';
 import { saveUserSession, SessionUser } from '@/services/userSession';
 import { BORDER_RADIUS, FONT_SIZES, FONT_WEIGHTS, Fonts, HTML_SHADOWS, SPACING } from '@/constants/theme';
@@ -195,9 +201,16 @@ export default function AuthScreen() {
   /* ────── Đăng nhập bằng Google ────── */
   const handleGoogleSignIn = async () => {
     setErrorMessage(null);
+    setLoading(true);
+
     try {
-      setLoading(true);
-      const firebaseUser = await signInWithGoogle();
+      let firebaseUser;
+      if (Platform.OS === 'web') {
+        firebaseUser = await signInWithGoogleWeb();
+      } else {
+        firebaseUser = await signInWithGoogleNative();
+      }
+
       const userData = await getUserById(firebaseUser.uid);
 
       const session: SessionUser = {
@@ -215,19 +228,20 @@ export default function AuthScreen() {
       await onLoginSuccess();
       clearForm();
       router.replace('/(tabs)/period');
-    } catch (error: unknown) {
-      console.error('Google Sign-In failed:', error);
-      const code = (error as { code?: string })?.code;
-      const errText = (error as { message?: string })?.message || '';
-      let message = 'Đăng nhập bằng Google chưa hoàn tất hoặc bị hủy.';
-      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-        message = 'Đã hủy thao tác đăng nhập bằng Google.';
-      } else if (code === 'auth/popup-blocked') {
-        message = 'Cửa sổ đăng nhập bị chặn bởi trình duyệt. Vui lòng thử lại.';
-      } else if (errText) {
-        message = errText;
+    } catch (error: any) {
+      const errCode = error?.code;
+      // Người dùng chủ động đóng hộp thoại chọn tài khoản / bấm Hủy
+      if (
+        errCode === '12501' ||
+        errCode === 'SIGN_IN_CANCELLED' ||
+        error?.message?.includes('hủy') ||
+        error?.message?.includes('cancel') ||
+        error?.message?.includes('dismiss')
+      ) {
+        return;
       }
-      setErrorMessage(message);
+      console.error('Google Sign-In failed:', error);
+      setErrorMessage(error?.message || 'Đăng nhập bằng Google thất bại. Vui lòng thử lại.');
     } finally {
       setLoading(false);
     }

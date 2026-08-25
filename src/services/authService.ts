@@ -9,9 +9,12 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { Platform } from 'react-native';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
-import * as Linking from 'expo-linking';
+import * as AuthSession from 'expo-auth-session';
 import { auth, db } from '@/services/firebase';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export const loginWithUsername = async (
   email: string,
@@ -56,7 +59,7 @@ export const register = async (userData: {
   return userCredential.user;
 };
 
-const syncGoogleUserToFirestore = async (user: User) => {
+export const syncGoogleUserToFirestore = async (user: User) => {
   const userRef = doc(db, 'users', user.uid);
   const userSnap = await getDoc(userRef);
   if (!userSnap.exists()) {
@@ -72,73 +75,192 @@ const syncGoogleUserToFirestore = async (user: User) => {
   }
 };
 
+const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+
+let isGoogleSigninConfigured = false;
+export const configureGoogleSignin = () => {
+  if (Platform.OS !== 'web' && !isExpoGo && !isGoogleSigninConfigured) {
+    try {
+      const { GoogleSignin } = require('@react-native-google-signin/google-signin');
+      GoogleSignin.configure({
+        webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+        offlineAccess: true,
+      });
+      isGoogleSigninConfigured = true;
+    } catch (e) {
+      console.warn('GoogleSignin configure error:', e);
+    }
+  }
+};
+
+// Gọi khởi tạo GoogleSignin nếu không phải Expo Go
+if (!isExpoGo) {
+  configureGoogleSignin();
+}
+
 /**
- * Đăng nhập bằng tài khoản Google (Đồng bộ Redirect URI chuẩn Expo WebBrowser)
+ * Đăng nhập bằng Google trên môi trường Web (signInWithPopup)
  */
-export const signInWithGoogle = async (): Promise<User> => {
+export const signInWithGoogleWeb = async (): Promise<User> => {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
+  const authModule = require('firebase/auth');
+  const result = await authModule.signInWithPopup(auth, provider);
+  await syncGoogleUserToFirestore(result.user);
+  return result.user;
+};
 
-  // 1. Môi trường Web Trình duyệt
-  if (Platform.OS === 'web') {
-    try {
-      const authModule = require('firebase/auth');
-      if (typeof authModule.signInWithPopup === 'function') {
-        const result = await authModule.signInWithPopup(auth, provider);
-        await syncGoogleUserToFirestore(result.user);
-        return result.user;
-      }
-    } catch (e) {
-      console.warn('signInWithPopup fallback:', e);
-    }
+/**
+ * Tạo code_verifier và code_challenge cho PKCE
+ */
+const generatePKCE = async () => {
+  const { digestStringAsync, CryptoDigestAlgorithm, CryptoEncoding } = await import('expo-crypto');
+
+  // Tạo code_verifier ngẫu nhiên (43-128 ký tự URL-safe)
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+  let codeVerifier = '';
+  for (let i = 0; i < 64; i++) {
+    codeVerifier += chars.charAt(Math.floor(Math.random() * chars.length));
   }
 
-  // 2. Môi trường Native Mobile (Expo Go / Standalone)
-  const webClientId =
-    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
-    process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+  // SHA-256 hash bằng expo-crypto (trả về base64)
+  const hash = await digestStringAsync(CryptoDigestAlgorithm.SHA256, codeVerifier, {
+    encoding: CryptoEncoding.BASE64,
+  });
 
-  if (!webClientId) {
-    throw new Error('Chưa cấu hình EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID trong file .env');
+  // Chuyển base64 sang base64url
+  const codeChallenge = hash
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+
+  return { codeVerifier, codeChallenge };
+};
+
+/**
+ * Đăng nhập bằng Google trên Expo Go (iOS/Android) qua Authorization Code + PKCE
+ */
+export const signInWithGoogleExpoGo = async (): Promise<User> => {
+  const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+  const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+  const clientId = Platform.OS === 'ios' && iosClientId ? iosClientId : webClientId;
+
+  if (!clientId) {
+    throw new Error('Chưa cấu hình Google Client ID cho ứng dụng.');
   }
 
-  // Đảm bảo Redirect URI khớp 100% giữa Google OAuth và Expo WebBrowser session
-  const redirectUri = Linking.createURL('auth');
-  const nonce = Math.random().toString(36).substring(2) + Date.now().toString(36);
+  // Redirect URI dạng iOS URL scheme cho iOS Client ID
+  let redirectUri: string;
+  if (Platform.OS === 'ios' && iosClientId) {
+    const iosGuid = iosClientId.replace('.apps.googleusercontent.com', '');
+    redirectUri = `com.googleusercontent.apps.${iosGuid}:/oauthredirect`;
+  } else {
+    redirectUri = AuthSession.makeRedirectUri({ preferLocalhost: true });
+  }
 
-  const googleOAuthUrl =
+  // Tạo PKCE code_verifier + code_challenge
+  const { codeVerifier, codeChallenge } = await generatePKCE();
+
+  const authUrl =
     `https://accounts.google.com/o/oauth2/v2/auth?` +
-    `client_id=${encodeURIComponent(webClientId)}` +
+    `client_id=${encodeURIComponent(clientId)}` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-    `&response_type=id_token%20token` +
-    `&scope=${encodeURIComponent('openid profile email')}` +
-    `&nonce=${encodeURIComponent(nonce)}` +
-    `&prompt=select_account`;
+    `&response_type=code` +
+    `&scope=${encodeURIComponent('openid email profile')}` +
+    `&prompt=select_account` +
+    `&code_challenge=${encodeURIComponent(codeChallenge)}` +
+    `&code_challenge_method=S256` +
+    `&access_type=offline`;
 
-  const result = await WebBrowser.openAuthSessionAsync(googleOAuthUrl, redirectUri);
+  const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
 
   if (result.type === 'success' && result.url) {
-    const rawUrl = result.url;
-    const hashString = rawUrl.includes('#') ? rawUrl.split('#')[1] : rawUrl.split('?')[1];
-    const params = new URLSearchParams(hashString || '');
-
-    const idToken = params.get('id_token') || params.get('credential');
-    const accessToken = params.get('access_token');
-
-    if (idToken) {
-      const credential = GoogleAuthProvider.credential(idToken, accessToken);
-      const userCred = await signInWithCredential(auth, credential);
-      await syncGoogleUserToFirestore(userCred.user);
-      return userCred.user;
+    // Lấy authorization code từ URL trả về
+    const urlParts = result.url.split('?');
+    const queryString = urlParts.length > 1 ? urlParts[1] : '';
+    let code: string | null = null;
+    for (const pair of queryString.split('&')) {
+      const [key, value] = pair.split('=');
+      if (key === 'code') {
+        code = decodeURIComponent(value);
+        break;
+      }
     }
+
+    if (!code) {
+      throw new Error('Không nhận được authorization code từ Google.');
+    }
+
+    // Đổi authorization code lấy id_token
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body:
+        `client_id=${encodeURIComponent(clientId)}` +
+        `&code=${encodeURIComponent(code)}` +
+        `&code_verifier=${encodeURIComponent(codeVerifier)}` +
+        `&grant_type=authorization_code` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}`,
+    });
+
+    const tokenData = await tokenResponse.json();
+
+    if (tokenData.id_token) {
+      return signInWithGoogleIdToken(tokenData.id_token, tokenData.access_token);
+    }
+
+    throw new Error(tokenData.error_description || 'Không nhận được id_token từ Google.');
+  } else if (result.type === 'cancel' || result.type === 'dismiss') {
+    throw { code: '12501', message: 'Người dùng đã hủy đăng nhập' };
   }
 
-  if (auth.currentUser) {
-    await syncGoogleUserToFirestore(auth.currentUser);
-    return auth.currentUser;
+  throw new Error('Đăng nhập Google trên Expo Go không hoàn tất.');
+};
+
+/**
+ * Đăng nhập bằng Google Native (Android / iOS)
+ */
+export const signInWithGoogleNative = async (): Promise<User> => {
+  if (Platform.OS === 'web') {
+    return signInWithGoogleWeb();
   }
 
-  throw new Error('Thao tác đăng nhập Google chưa hoàn tất hoặc đã bị hủy.');
+  if (isExpoGo) {
+    return signInWithGoogleExpoGo();
+  }
+
+  const { GoogleSignin } = require('@react-native-google-signin/google-signin');
+  configureGoogleSignin();
+  await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+  // Đăng xuất phiên cũ trước để Google luôn hiển thị bảng chọn tài khoản
+  try {
+    await GoogleSignin.signOut();
+  } catch {
+    // Bỏ qua nếu chưa có phiên đăng nhập
+  }
+
+  const response = await GoogleSignin.signIn();
+  const idToken = response.data?.idToken || (response as any).idToken;
+
+  if (!idToken) {
+    throw new Error('Không nhận được ID Token từ Google Sign-In');
+  }
+
+  return signInWithGoogleIdToken(idToken);
+};
+
+/**
+ * Đăng nhập Firebase bằng Google id_token
+ */
+export const signInWithGoogleIdToken = async (
+  idToken: string,
+  accessToken?: string | null,
+): Promise<User> => {
+  const credential = GoogleAuthProvider.credential(idToken, accessToken);
+  const userCred = await signInWithCredential(auth, credential);
+  await syncGoogleUserToFirestore(userCred.user);
+  return userCred.user;
 };
 
 /**
@@ -155,4 +277,12 @@ export const resetPassword = async (email: string): Promise<void> => {
 
 export const logout = async (): Promise<void> => {
   await firebaseSignOut(auth);
+  if (Platform.OS !== 'web' && !isExpoGo) {
+    try {
+      const { GoogleSignin } = require('@react-native-google-signin/google-signin');
+      await GoogleSignin.signOut();
+    } catch (e) {
+      console.warn('GoogleSignin logout error:', e);
+    }
+  }
 };

@@ -8,9 +8,12 @@
     "scheme": "vietnamhistorynativereactapp",
     "userInterfaceStyle": "automatic",
     "ios": {
+      "bundleIdentifier": "com.example.vietnamhistoryapplication",
       "icon": "./assets/expo.icon"
     },
     "android": {
+      "package": "com.example.vietnamhistoryapplication",
+      "googleServicesFile": "./android/app/google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -41,7 +44,8 @@
           "photosPermission": "Cho phép ứng dụng truy cập thư viện để chọn ảnh đại diện."
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "@react-native-google-signin/google-signin"
     ],
     "experiments": {
       "typedRoutes": true,
