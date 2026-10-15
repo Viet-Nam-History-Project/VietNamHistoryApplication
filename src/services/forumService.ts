@@ -30,6 +30,7 @@ import {
   QueryDocumentSnapshot,
   DocumentData,
   Unsubscribe,
+  QueryConstraint,
 } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 
@@ -144,7 +145,8 @@ function parsePost(doc: QueryDocumentSnapshot<DocumentData>): ForumPost {
 export async function getForumPosts(
   limitCount = 20,
   startAfterDoc?: QueryDocumentSnapshot<DocumentData> | null,
-  sortBy: 'newest' | 'popular' | 'oldest' = 'newest'
+  sortBy: 'newest' | 'popular' | 'oldest' = 'newest',
+  likedByUserId?: string,
 ): Promise<ForumPostsResult> {
   const forumRef = collection(db, 'forum');
 
@@ -162,7 +164,14 @@ export async function getForumPosts(
   // Rules chỉ cho phép đọc bài công khai. Điều kiện này phải nằm trong query
   // (không chỉ lọc ở client), nếu không Firestore sẽ từ chối toàn bộ query vì
   // nó có thể trả về cả bài đã bị moderator ẩn.
-  const constraints = [where('isHidden', '==', false), orderBy(orderField, orderDirection)];
+  const constraints: QueryConstraint[] = [where('isHidden', '==', false)];
+
+  if (likedByUserId) {
+    constraints.push(where('likes', 'array-contains', likedByUserId));
+  }
+
+  constraints.push(orderBy(orderField, orderDirection));
+
   const q = startAfterDoc
     ? query(forumRef, ...constraints, startAfter(startAfterDoc), limit(limitCount + 1))
     : query(forumRef, ...constraints, limit(limitCount + 1));

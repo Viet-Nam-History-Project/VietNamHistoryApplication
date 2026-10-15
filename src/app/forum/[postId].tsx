@@ -119,7 +119,7 @@ function AvatarView({
 // ── Component ────────────────────────────────────────────────────────────
 
 export default function ForumDetailScreen() {
-  const { postId } = useLocalSearchParams<{ postId: string }>();
+  const { postId, focusComment } = useLocalSearchParams<{ postId: string; focusComment?: string }>();
   const router = useRouter();
   const { user } = useAuth();
   const { profile } = useGamification();
@@ -133,6 +133,16 @@ export default function ForumDetailScreen() {
   const [reportVisible, setReportVisible] = useState(false);
 
   const inputRef = useRef<TextInput>(null);
+
+  // Focus comment input when opened with focusComment
+  useEffect(() => {
+    if (focusComment === 'true' && !loading && post) {
+      const timer = setTimeout(() => {
+        inputRef.current?.focus();
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+  }, [focusComment, loading, post]);
 
   // Fetch post
   useEffect(() => {
@@ -317,7 +327,11 @@ export default function ForumDetailScreen() {
                   {post.likeCount}
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.statBtn}>
+              <TouchableOpacity 
+                style={styles.statBtn}
+                activeOpacity={0.7}
+                onPress={() => inputRef.current?.focus()}
+              >
                 <View style={styles.statIconWrapNormal}>
                   <Ionicons name="chatbubble" size={15} color={SuVietColors.muc2} />
                 </View>
@@ -405,6 +419,7 @@ export default function ForumDetailScreen() {
             onChangeText={setReplyText}
             multiline
             maxLength={500}
+            autoFocus={focusComment === 'true'}
           />
           <TouchableOpacity
             onPress={handleSendReply}

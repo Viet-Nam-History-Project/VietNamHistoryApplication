@@ -27,8 +27,7 @@ import { useGamification } from '@/contexts/GamificationContext';
 import { getRankTier } from '@/services/rankService';
 import { ErrorState, LoadingState, Screen, AppHeader, useTopInset } from '@/components/ui';
 
-const MAX_WRONG_MOVES = 5;
-const MAX_ATTACKS = 3;
+const MAX_MISTAKES = 3;
 
 type Status = 'playing' | 'won' | 'lost';
 type WarriorMode = 'idle' | 'walk' | 'attack';
@@ -149,8 +148,7 @@ export default function TimelinePlayScreen() {
   const [hand, setHand] = useState<TimelineEvent[]>([]);
   const [placed, setPlaced] = useState<(TimelineEvent | null)[]>([]);
   const [currentStep, setCurrentStep] = useState(0);
-  const [wrongMoves, setWrongMoves] = useState(0);
-  const [attacks, setAttacks] = useState(0);
+  const [mistakes, setMistakes] = useState(0);
   const [status, setStatus] = useState<Status>(isReviewMode ? 'won' : 'playing');
   const [isProcessing, setIsProcessing] = useState(false);
   const [stageWidth, setStageWidth] = useState(360);
@@ -165,7 +163,7 @@ export default function TimelinePlayScreen() {
   const shakeX = useRef(new Animated.Value(0)).current;
   const turretScale = useRef(new Animated.Value(1)).current;
 
-  const lives = Math.max(0, MAX_ATTACKS - attacks);
+  const lives = Math.max(0, MAX_MISTAKES - mistakes);
   const warriorFrames = useMemo(() => {
     if (warriorMode === 'walk') return GAME_ASSETS.warriorWalkFrames;
     if (warriorMode === 'attack') return GAME_ASSETS.warriorAttackFrames;
@@ -184,8 +182,7 @@ export default function TimelinePlayScreen() {
       setHand(shuffle(events));
       setPlaced(new Array(sorted.length).fill(null));
       setCurrentStep(0);
-      setWrongMoves(0);
-      setAttacks(0);
+      setMistakes(0);
       setStatus('playing');
       setIsProcessing(false);
       setWarriorMode('idle');
@@ -289,10 +286,15 @@ export default function TimelinePlayScreen() {
     ]).start(() => setShakeKey(null));
   };
 
-  const playWalk = (nextWrongMoves: number) => {
+  const playWalk = (nextMistakes: number) => {
     setWarriorMode('walk');
+    // Ánh xạ bước tiến của lính theo MAX_MISTAKES:
+    // Với MAX_MISTAKES = 3:
+    // - Sai lần 1: 1 / 2 = 0.5 (tiến lại gần)
+    // - Sai lần 2: 2 / 2 = 1.0 (tới sát chân thành)
+    const targetProgress = Math.min(nextMistakes / (MAX_MISTAKES - 1), 1);
     Animated.timing(enemyProgress, {
-      toValue: Math.min(nextWrongMoves / MAX_WRONG_MOVES, 1),
+      toValue: targetProgress,
       duration: 800,
       useNativeDriver: true,
     }).start(() => {
@@ -301,7 +303,8 @@ export default function TimelinePlayScreen() {
     });
   };
 
-  const playAttack = (nextAttacks: number) => {
+  const playAttack = () => {
+    enemyProgress.setValue(1);
     setWarriorMode('attack');
     Animated.sequence([
       Animated.timing(turretScale, { toValue: 0.88, duration: 120, useNativeDriver: true }),
@@ -311,9 +314,7 @@ export default function TimelinePlayScreen() {
     setTimeout(() => {
       setWarriorMode('idle');
       setIsProcessing(false);
-      if (nextAttacks >= MAX_ATTACKS) {
-        setStatus('lost');
-      }
+      setStatus('lost');
     }, 900);
   };
 
@@ -346,16 +347,14 @@ export default function TimelinePlayScreen() {
     setIsProcessing(true);
     triggerCardShake(key);
 
-    if (wrongMoves < MAX_WRONG_MOVES) {
-      const nextWrongMoves = wrongMoves + 1;
-      setWrongMoves(nextWrongMoves);
-      playWalk(nextWrongMoves);
-      return;
-    }
+    const nextMistakes = mistakes + 1;
+    setMistakes(nextMistakes);
 
-    const nextAttacks = attacks + 1;
-    setAttacks(nextAttacks);
-    playAttack(nextAttacks);
+    if (nextMistakes < MAX_MISTAKES) {
+      playWalk(nextMistakes);
+    } else {
+      playAttack();
+    }
   };
 
   if (loading) return <LoadingState message="Đang tải kỷ nguyên..." />;
@@ -469,7 +468,7 @@ export default function TimelinePlayScreen() {
             onLayout={(e) => setStageWidth(e.nativeEvent.layout.width)}
           >
             <View style={styles.hpWrap}>
-              {Array.from({ length: MAX_ATTACKS }).map((_, i) => {
+              {Array.from({ length: MAX_MISTAKES }).map((_, i) => {
                 const filled = i < lives;
                 return (
                   <View
@@ -477,7 +476,7 @@ export default function TimelinePlayScreen() {
                     style={[
                       styles.hpSegment,
                       i === 0 && styles.hpLeft,
-                      i === MAX_ATTACKS - 1 && styles.hpRight,
+                      i === MAX_MISTAKES - 1 && styles.hpRight,
                       { backgroundColor: filled ? '#ff2d23' : '#4a4a4a' },
                     ]}
                   />

@@ -102,7 +102,7 @@ export default function TimelineDetailScreen() {
           <View style={styles.rulesBox}>
             <Text style={styles.rulesText}>
               <Text style={styles.rulesBold}>Cách chơi. </Text>
-              Chọn thẻ sự kiện theo thứ tự thời gian từ sớm đến muộn. Nếu sai, kẻ địch tiến gần. Ghép đủ sự kiện trước khi pháo đài hết máu để thắng!
+              Chọn thẻ sự kiện theo thứ tự thời gian từ sớm đến muộn. Sai tối đa 3 lần pháo đài sẽ thất thủ. Ghép đủ sự kiện trước khi hết máu để thắng!
             </Text>
           </View>
 

@@ -25,7 +25,7 @@ import { Screen, AuthRequiredModal } from '@/components/ui';
 import { Fonts, HTML_SHADOWS, SuVietColors, SPACING } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGamification } from '@/contexts/GamificationContext';
-import { ForumPost, getForumPosts } from '@/services/forumService';
+import { ForumPost, getForumPosts, toggleLike } from '@/services/forumService';
 import { getRankTier } from '@/services/rankService';
 import { useFocusEffect } from '@react-navigation/native';
 import { ReportPostModal } from '@/components/forum/ReportPostModal';
@@ -76,6 +76,7 @@ export default function ForumScreen() {
   const [hasMore, setHasMore] = useState(false);
 
   const [sortBy, setSortBy] = useState<'newest' | 'popular' | 'oldest'>('newest');
+  const [onlyLiked, setOnlyLiked] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -89,7 +90,11 @@ export default function ForumScreen() {
 
   const currentSortLabel = sortOptions.find(o => o.value === sortBy)?.label;
 
-  const loadPosts = useCallback(async (isRefresh = true, sortMode: 'newest' | 'popular' | 'oldest' = sortBy) => {
+  const loadPosts = useCallback(async (
+    isRefresh = true,
+    sortMode: 'newest' | 'popular' | 'oldest' = sortBy,
+    filterLiked: boolean = onlyLiked,
+  ) => {
     try {
       if (isRefresh) {
         setLoading(true);
@@ -98,7 +103,8 @@ export default function ForumScreen() {
         setLoadingMore(true);
       }
 
-      const result = await getForumPosts(20, isRefresh ? null : lastDoc, sortMode);
+      const likedBy = filterLiked && user?.id ? user.id : undefined;
+      const result = await getForumPosts(20, isRefresh ? null : lastDoc, sortMode, likedBy);
 
       if (isRefresh) {
         setPosts(result.posts);
@@ -107,17 +113,95 @@ export default function ForumScreen() {
       }
       setLastDoc(result.lastDoc);
       setHasMore(result.hasMore);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load forum posts:', error);
+      if (error?.message?.includes('requires an index')) {
+        console.warn('⚠️ Firestore composite index required for liked filter query:', error.message);
+      }
     } finally {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [lastDoc, sortBy]);
+  }, [lastDoc, sortBy, onlyLiked, user?.id]);
 
   const handleSortChange = (newSort: 'newest' | 'popular' | 'oldest') => {
     setSortBy(newSort);
-    loadPosts(true, newSort);
+    setLastDoc(null);
+    setHasMore(false);
+    loadPosts(true, newSort, onlyLiked);
+  };
+
+  const handleToggleLikedFilter = () => {
+    const nextOnlyLiked = !onlyLiked;
+    setOnlyLiked(nextOnlyLiked);
+    setLastDoc(null);
+    setHasMore(false);
+    loadPosts(true, sortBy, nextOnlyLiked);
+  };
+
+  const [likingPostIds, setLikingPostIds] = useState<Record<string, boolean>>({});
+
+  const handleToggleLike = async (post: ForumPost) => {
+    if (!user?.id) {
+      setAuthModalVisible(true);
+      return;
+    }
+
+    if (likingPostIds[post.id]) return;
+
+    const currentLikes = Array.isArray(post.likes) ? post.likes : [];
+    const wasLiked = currentLikes.includes(user.id);
+
+    // Optimistic UI update
+    setPosts((prevPosts) =>
+      prevPosts.map((p) => {
+        if (p.id !== post.id) return p;
+        const pLikes = Array.isArray(p.likes) ? p.likes : [];
+        const newLikes = wasLiked
+          ? pLikes.filter((id) => id !== user.id)
+          : [...pLikes, user.id];
+        const newLikeCount = wasLiked
+          ? Math.max(0, p.likeCount - 1)
+          : p.likeCount + 1;
+        return {
+          ...p,
+          likes: newLikes,
+          likeCount: newLikeCount,
+        };
+      })
+    );
+
+    setLikingPostIds((prev) => ({ ...prev, [post.id]: true }));
+
+    try {
+      await toggleLike(post.id, user.id);
+    } catch (err) {
+      console.error('Failed to toggle like on post:', err);
+      // Rollback on error
+      setPosts((prevPosts) =>
+        prevPosts.map((p) => {
+          if (p.id !== post.id) return p;
+          const pLikes = Array.isArray(p.likes) ? p.likes : [];
+          const revertedLikes = wasLiked
+            ? [...pLikes, user.id]
+            : pLikes.filter((id) => id !== user.id);
+          const revertedLikeCount = wasLiked
+            ? p.likeCount + 1
+            : Math.max(0, p.likeCount - 1);
+          return {
+            ...p,
+            likes: revertedLikes,
+            likeCount: revertedLikeCount,
+          };
+        })
+      );
+    } finally {
+      setLikingPostIds((prev) => {
+        const next = { ...prev };
+        delete next[post.id];
+        return next;
+      });
+    }
   };
 
   const [authModalVisible, setAuthModalVisible] = useState(false);
@@ -128,13 +212,13 @@ export default function ForumScreen() {
         setAuthModalVisible(true);
         return;
       }
-      loadPosts(true);
-    }, [user, loadPosts])
+      loadPosts(true, sortBy, onlyLiked);
+    }, [user, loadPosts, sortBy, onlyLiked])
   );
 
   const handleLoadMore = () => {
     if (!loadingMore && hasMore) {
-      loadPosts(false);
+      loadPosts(false, sortBy, onlyLiked);
     }
   };
 
@@ -143,6 +227,7 @@ export default function ForumScreen() {
     const authorRank = isMe && profile ? profile.currentRank : item.authorRank;
     const authorName = isMe && user ? (user.name || user.displayName || user.username || 'Ẩn danh') : (item.authorName || 'Ẩn danh');
     const authorPhoto = isMe && user ? (user.avatar || user.photo || '') : item.authorPhoto;
+    const isLiked = Boolean(user?.id && Array.isArray(item.likes) && item.likes.includes(user.id));
 
     return (
       <TouchableOpacity
@@ -201,13 +286,37 @@ export default function ForumScreen() {
         {/* Stats row */}
         <View style={styles.statsRow}>
           <View style={styles.statsLeft}>
-            <TouchableOpacity style={styles.statBtn}>
-              <View style={styles.statIconWrap}>
-                <Ionicons name="heart" size={14} color={SuVietColors.do} />
+            <TouchableOpacity 
+              style={styles.statBtn}
+              activeOpacity={0.7}
+              onPress={(event) => {
+                event.stopPropagation();
+                handleToggleLike(item);
+              }}
+            >
+              <View style={[styles.statIconWrap, isLiked && styles.statIconWrapActive]}>
+                <Ionicons 
+                  name={isLiked ? "heart" : "heart-outline"} 
+                  size={14} 
+                  color={isLiked ? SuVietColors.do : SuVietColors.muc2} 
+                />
               </View>
-              <Text style={styles.statTextHighlight}>{item.likeCount}</Text>
+              <Text style={[styles.statTextNormal, isLiked && styles.statTextHighlight]}>
+                {item.likeCount}
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.statBtn}>
+
+            <TouchableOpacity 
+              style={styles.statBtn}
+              activeOpacity={0.7}
+              onPress={(event) => {
+                event.stopPropagation();
+                router.push({
+                  pathname: '/forum/[postId]',
+                  params: { postId: item.id, focusComment: 'true' },
+                } as any);
+              }}
+            >
               <View style={styles.statIconWrapNormal}>
                 <Ionicons name="chatbubble" size={14} color={SuVietColors.muc2} />
               </View>
@@ -219,15 +328,39 @@ export default function ForumScreen() {
     );
   };
 
-  const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <View style={styles.emptyIconCircle}>
-        <Ionicons name="chatbubbles-outline" size={48} color={SuVietColors.son} />
+  const renderEmpty = () => {
+    if (searchQuery.trim().length > 0 && posts.length > 0) {
+      return (
+        <View style={styles.emptyContainer}>
+          <View style={styles.emptyIconCircle}>
+            <Ionicons name="search-outline" size={48} color={SuVietColors.muc2} />
+          </View>
+          <Text style={styles.emptyText}>Không tìm thấy bài viết</Text>
+          <Text style={styles.emptySubtext}>Thử tìm kiếm với từ khóa khác</Text>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.emptyContainer}>
+        <View style={styles.emptyIconCircle}>
+          <Ionicons
+            name={onlyLiked ? "heart-outline" : "chatbubbles-outline"}
+            size={48}
+            color={onlyLiked ? SuVietColors.do : SuVietColors.son}
+          />
+        </View>
+        <Text style={styles.emptyText}>
+          {onlyLiked ? "Bạn chưa thích bài viết nào" : "Chưa có bài viết nào"}
+        </Text>
+        <Text style={styles.emptySubtext}>
+          {onlyLiked
+            ? "Hãy thả tim các bài viết bạn yêu thích để xem lại sau tại đây!"
+            : "Hãy là người đầu tiên chia sẻ suy nghĩ của bạn!"}
+        </Text>
       </View>
-      <Text style={styles.emptyText}>Chưa có bài viết nào</Text>
-      <Text style={styles.emptySubtext}>Hãy là người đầu tiên chia sẻ suy nghĩ của bạn!</Text>
-    </View>
-  );
+    );
+  };
 
   const renderFooter = () => {
     if (!loadingMore) return <View style={{ height: 100 }} />;
@@ -289,9 +422,9 @@ export default function ForumScreen() {
         </View>
       </LinearGradient>
 
-      {/* Filters Dropdown Button */}
+      {/* Filters & Liked Toggle Bar */}
       <View style={styles.filterWrapper}>
-        <View style={{ paddingHorizontal: 22, alignItems: 'flex-start' }}>
+        <View style={styles.filterRow}>
           <TouchableOpacity 
             style={styles.dropdownToggleBtn}
             onPress={() => setShowDropdown(true)}
@@ -300,6 +433,21 @@ export default function ForumScreen() {
             <Ionicons name="filter" size={16} color={SuVietColors.muc2} />
             <Text style={styles.dropdownToggleText}>Sắp xếp: {currentSortLabel}</Text>
             <Ionicons name="chevron-down" size={16} color={SuVietColors.muc2} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.likedFilterChip, onlyLiked && styles.likedFilterChipActive]}
+            onPress={handleToggleLikedFilter}
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name={onlyLiked ? "heart" : "heart-outline"}
+              size={15}
+              color={onlyLiked ? SuVietColors.do : SuVietColors.muc2}
+            />
+            <Text style={[styles.likedFilterText, onlyLiked && styles.likedFilterTextActive]}>
+              Đã thích
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -454,6 +602,13 @@ const styles = StyleSheet.create({
 
   // Filters
   filterWrapper: { marginTop: -20, zIndex: 10, marginBottom: 8 },
+  filterRow: {
+    paddingHorizontal: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
   dropdownToggleBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 14, paddingVertical: 8,
@@ -465,6 +620,25 @@ const styles = StyleSheet.create({
   },
   dropdownToggleText: {
     fontFamily: Fonts.medium, fontSize: 13, color: SuVietColors.muc,
+  },
+  likedFilterChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 8,
+    backgroundColor: 'rgba(253, 248, 236, 0.85)',
+    borderRadius: 20,
+    borderWidth: 1, borderColor: 'rgba(101,19,16,0.12)',
+    shadowColor: SuVietColors.son, shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 3, elevation: 1,
+  },
+  likedFilterChipActive: {
+    backgroundColor: 'rgba(200, 16, 46, 0.1)',
+    borderColor: SuVietColors.do,
+  },
+  likedFilterText: {
+    fontFamily: Fonts.medium, fontSize: 13, color: SuVietColors.muc2,
+  },
+  likedFilterTextActive: {
+    fontFamily: Fonts.bold, color: SuVietColors.do,
   },
   modalOverlay: {
     flex: 1,
@@ -563,6 +737,9 @@ const styles = StyleSheet.create({
   statIconWrapNormal: {
     width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(101,19,16,0.04)',
     alignItems: 'center', justifyContent: 'center',
+  },
+  statIconWrapActive: {
+    backgroundColor: 'rgba(200, 16, 46, 0.08)',
   },
   statTextHighlight: { fontFamily: Fonts.semibold, fontSize: 13.5, color: SuVietColors.do },
   statTextNormal: { fontFamily: Fonts.semibold, fontSize: 13.5, color: SuVietColors.muc2 },
