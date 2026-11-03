@@ -81,6 +81,7 @@ export { askHistoryAi } from './chatAiService';
 export type {
   ChatAiResponse,
   ChatCitation,
+  ChatContentSuggestion,
   ChatHistoryMessage,
 } from './chatAiService';
 

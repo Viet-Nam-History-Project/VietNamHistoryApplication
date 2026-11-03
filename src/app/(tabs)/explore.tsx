@@ -14,10 +14,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Markdown from 'react-native-markdown-display';
+import { useRouter } from 'expo-router';
 import { BORDER_RADIUS, FONT_SIZES, FONT_WEIGHTS, SPACING } from '@/constants/theme';
 import { useThemeColors } from '@/contexts/ThemeContext';
 import { AppHeader, Card, Screen } from '@/components/ui';
-import { askHistoryAi } from '@/services/chatAiService';
+import { askHistoryAi, ChatContentSuggestion } from '@/services/chatAiService';
 
 type ChatRole = 'assistant' | 'user';
 
@@ -26,6 +27,7 @@ interface ChatMessage {
   role: ChatRole;
   content: string;
   confidence?: number;
+  contentSuggestions?: ChatContentSuggestion[];
   isError?: boolean;
 }
 
@@ -51,7 +53,17 @@ function createId() {
 
 function MessageBubble({ message }: { message: ChatMessage }) {
   const colors = useThemeColors();
+  const router = useRouter();
   const isUser = message.role === 'user';
+  const [showAllSuggestions, setShowAllSuggestions] = useState(false);
+  const suggestions = message.contentSuggestions ?? [];
+  const visibleSuggestions = showAllSuggestions ? suggestions : suggestions.slice(0, 3);
+  const hiddenSuggestionCount = suggestions.length - visibleSuggestions.length;
+  const suggestionLabel = (contentType: ChatContentSuggestion['contentType']) => ({
+    person: 'Mở hồ sơ nhân vật',
+    period: 'Mở thời kỳ lịch sử',
+    event: 'Mở bài viết sự kiện',
+  })[contentType];
   const markdownStyles = useMemo(() => ({
     body: { color: colors.text, fontSize: FONT_SIZES.sm, lineHeight: 23 },
     heading1: { color: colors.text, fontSize: FONT_SIZES.xl, fontWeight: FONT_WEIGHTS.bold, marginTop: 12, marginBottom: 7 },
@@ -90,6 +102,52 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         ]}
       >
         {isUser || message.isError ? <Text style={[styles.messageText, { color: isUser ? colors.onPrimary : colors.text }]}>{message.content}</Text> : <Markdown style={markdownStyles}>{message.content}</Markdown>}
+
+        {!isUser && !message.isError && Boolean(message.contentSuggestions?.length) && (
+          <View style={[styles.suggestionSection, { borderTopColor: colors.border }]}>
+            <Text style={[styles.suggestionHeading, { color: colors.text }]}>Tìm hiểu thêm trong ứng dụng</Text>
+            {visibleSuggestions.map((suggestion) => (
+              <Pressable
+                key={suggestion.firestorePath}
+                onPress={() => router.push(suggestion.appPath as never)}
+                style={({ pressed }) => [
+                  styles.suggestionCard,
+                  {
+                    backgroundColor: colors.primaryDim,
+                    borderColor: colors.border,
+                    opacity: pressed ? 0.72 : 1,
+                  },
+                ]}
+              >
+                <View style={styles.suggestionCopy}>
+                  <Text style={[styles.suggestionTitle, { color: colors.text }]}>{suggestion.title}</Text>
+                  <Text style={[styles.suggestionHint, { color: colors.textSecondary }]}>{suggestionLabel(suggestion.contentType)}</Text>
+                </View>
+                <Ionicons name="arrow-forward-circle-outline" size={22} color={colors.primary} />
+              </Pressable>
+            ))}
+            {suggestions.length > 3 && (
+              <Pressable
+                onPress={() => setShowAllSuggestions((current) => !current)}
+                style={({ pressed }) => [
+                  styles.suggestionToggle,
+                  { opacity: pressed ? 0.65 : 1 },
+                ]}
+              >
+                <Text style={[styles.suggestionToggleText, { color: colors.primary }]}>
+                  {showAllSuggestions
+                    ? 'Thu gọn'
+                    : `Xem thêm ${hiddenSuggestionCount} nội dung`}
+                </Text>
+                <Ionicons
+                  name={showAllSuggestions ? 'chevron-up' : 'chevron-down'}
+                  size={17}
+                  color={colors.primary}
+                />
+              </Pressable>
+            )}
+          </View>
+        )}
 
       </View>
     </View>
@@ -158,6 +216,7 @@ export default function ExploreScreen() {
         role: 'assistant',
         content: result.answer,
         confidence: result.confidence,
+        contentSuggestions: result.contentSuggestions,
       };
       setMessages((current) => [...current, assistantMessage]);
     } catch (error) {
@@ -378,6 +437,48 @@ const styles = StyleSheet.create({
   messageText: {
     fontSize: FONT_SIZES.sm,
     lineHeight: 22,
+  },
+  suggestionSection: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    marginTop: SPACING[2],
+    paddingTop: SPACING[3],
+    gap: SPACING[2],
+  },
+  suggestionHeading: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: FONT_WEIGHTS.bold,
+  },
+  suggestionCard: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: BORDER_RADIUS.md,
+    paddingHorizontal: SPACING[3],
+    paddingVertical: SPACING[2],
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING[2],
+  },
+  suggestionCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  suggestionTitle: {
+    fontSize: FONT_SIZES.sm,
+    fontWeight: FONT_WEIGHTS.semibold,
+  },
+  suggestionHint: {
+    fontSize: FONT_SIZES.xs,
+    marginTop: 2,
+  },
+  suggestionToggle: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING[1],
+  },
+  suggestionToggleText: {
+    fontSize: FONT_SIZES.xs,
+    fontWeight: FONT_WEIGHTS.bold,
   },
   thinkingRow: {
     alignSelf: 'flex-start',

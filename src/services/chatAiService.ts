@@ -15,10 +15,18 @@ export interface ChatCitation {
   score: number;
 }
 
+export interface ChatContentSuggestion {
+  title: string;
+  firestorePath: string;
+  appPath: string;
+  contentType: 'event' | 'person' | 'period';
+}
+
 export interface ChatAiResponse {
   answer: string;
   citations: ChatCitation[];
   confidence: number;
+  contentSuggestions: ChatContentSuggestion[];
 }
 
 const DEFAULT_AI_API_URL = Platform.select({
@@ -83,6 +91,20 @@ export async function askHistoryAi(
         }))
         : [],
       confidence: Number(payload.confidence ?? 0),
+      contentSuggestions: Array.isArray(payload.content_suggestions)
+        ? payload.content_suggestions.map((suggestion: Record<string, unknown>) => ({
+          title: String(suggestion.title ?? ''),
+          firestorePath: String(suggestion.firestore_path ?? ''),
+          appPath: String(suggestion.app_path ?? ''),
+          contentType: suggestion.content_type === 'person'
+            ? 'person'
+            : suggestion.content_type === 'period'
+              ? 'period'
+              : 'event',
+        })).filter((suggestion: ChatContentSuggestion) => (
+          suggestion.title.length > 0 && suggestion.appPath.length > 0
+        ))
+        : [],
     };
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
